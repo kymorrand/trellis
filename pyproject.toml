@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "trellis"
+version = "0.1.0"
+description = "Experimental personal agent runtime"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "Kyle Morrand", email = "kyle@morrandmore.com"},
+]
+
+dependencies = [
+    "anthropic>=0.40.0",
+    "discord.py>=2.4.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "litellm>=1.50.0",
+    "schedule>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["trellis*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

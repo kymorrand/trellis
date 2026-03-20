@@ -1,0 +1,21 @@
+# Default Role — used when no specific role is set
+name: default
+description: General-purpose assistant mode. Balanced between all capabilities.
+
+context_priority:
+  - recent_journal       # What's happened recently
+  - active_projects      # Current project contexts
+  - inbox                # Unprocessed items
+
+tone: professional_warm
+
+tools_enabled:
+  - vault_read
+  - vault_write
+  - discord_send
+  - linear_read
+  - calendar_read
+
+autonomy_level: medium  # low | medium | high
+
+model_preference: auto  # auto | local | cloud
