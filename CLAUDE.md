@@ -19,6 +19,10 @@ Ivy is the AI assistant running on Trellis. Her personality is defined in agents
 - `agents/ivy/roles/_default.yaml` — Default role configuration
 - `.env` — API keys and runtime config (NEVER commit)
 - `trellis/security/permissions.py` — What Ivy is allowed to do
+- `trellis/core/heartbeat.py` — Proactive scheduler (background tasks, briefs, cost tracking)
+- `trellis/mind/context.py` — Auto-context assembly (keyword extraction + vault search)
+- `scripts/run_discord.py` — Entry point: Discord bot + heartbeat as concurrent async tasks
+- `scripts/trellis.service` — Systemd service file for running Ivy as a daemon
 
 ## Tech Stack
 - Python 3.12+, no LangChain, no third-party plugins
@@ -41,6 +45,33 @@ Ivy is the AI assistant running on Trellis. Her personality is defined in agents
 - Shell commands whitelisted only — no sudo, no arbitrary execution
 - Cloud API budget capped at $100/month
 - Vault access restricted to ~/projects/ivy-vault only
+
+## Heartbeat Schedule
+The heartbeat runs as an async background task alongside the Discord bot:
+- **Every 30 min** — Inbox check (`_ivy/inbox/`) — silent, logs to journal
+- **Midnight** — Nightly vault backup (git add/commit/push), journal rollover, cost report
+- **8:00 AM** — Morning brief posted to Discord (overnight activity, queue, vault stats)
+- **6:00 PM** — End of day summary posted to Discord (messages, saves, API cost)
+- **Budget alerts** — Warns on Discord if monthly API spend exceeds 75% of IVY_BUDGET_MONTHLY
+
+## Discord Commands
+- `!clear` — Clear conversation history
+- `/status` — On-demand status report (uptime, vault stats, API spend, activity)
+- `/local <msg>` — Force local model (Ollama)
+- `/claude <msg>` — Force cloud model (Anthropic)
+- `remember this: <content>` — Save to vault
+
+## Auto-Context Assembly
+On every non-trivial message, Ivy automatically:
+1. Extracts 2-3 keywords from the message (filtering stop words)
+2. Searches the vault with those keywords
+3. Includes relevant results as context in the model prompt
+This means mentioning people, projects, or concepts pulls in vault knowledge without explicit "search the vault" commands.
+
+## Running
+- **Development:** `python scripts/run_discord.py`
+- **Production:** `sudo bash scripts/install-service.sh` (systemd, auto-restart, survives reboots)
+- **Tests:** `python -m pytest tests/ -v`
 
 ## Companion Repo
 - kymorrand/ivy-vault (private) — Obsidian vault knowledge base at ~/projects/ivy-vault

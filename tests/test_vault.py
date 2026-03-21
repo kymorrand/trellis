@@ -81,7 +81,7 @@ class TestSaveToVault:
     def test_save_drop(self, tmp_path):
         path = save_to_vault(tmp_path, "A quick note", "test note", category="drop")
         assert path.exists()
-        assert "inbox/drops" in str(path)
+        assert "_ivy/inbox/drops" in str(path)
         content = path.read_text(encoding="utf-8")
         assert "A quick note" in content
         assert "tags: [drop]" in content

@@ -99,8 +99,8 @@ def save_to_vault(
     """Save a new item to the vault.
 
     Categories:
-        drop    → inbox/drops/  (quick captures, random items)
-        knowledge → knowledge/  (reference material)
+        drop    → _ivy/inbox/drops/  (quick captures, random items)
+        knowledge → knowledge/        (reference material, Kyle's workspace)
     """
     vault_path = Path(vault_path)
     now = datetime.now()
@@ -117,7 +117,7 @@ def save_to_vault(
         dest_dir = vault_path / "knowledge"
         filename = f"{safe_title}.md"
     else:
-        dest_dir = vault_path / "inbox" / "drops"
+        dest_dir = vault_path / "_ivy" / "inbox" / "drops"
         filename = f"{date_str}-{safe_title}.md"
 
     dest_dir.mkdir(parents=True, exist_ok=True)
