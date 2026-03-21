@@ -9,6 +9,8 @@ Features:
     - Journal logging of every interaction
     - Vault search and save operations
     - Per-channel conversation history
+    - /status command for on-demand status reports
+    - Heartbeat integration for background tasks
 
 Security: Only processes messages from Kyle's Discord user ID.
 """
@@ -91,12 +93,33 @@ class IvyDiscordBot(discord.Client):
         # Per-channel conversation history: {channel_id: [{"role": ..., "content": ...}]}
         self.conversations: dict[int, list[dict]] = defaultdict(list)
 
+        # Heartbeat scheduler (set after construction via set_heartbeat)
+        self.heartbeat = None
+        # Primary channel for posting briefs (set on_ready)
+        self._primary_channel = None
+
+    def set_heartbeat(self, heartbeat):
+        """Attach the heartbeat scheduler to the bot."""
+        self.heartbeat = heartbeat
+
+    async def post_to_discord(self, message: str):
+        """Post a message to the primary channel (used by heartbeat for briefs/alerts)."""
+        if self._primary_channel:
+            for chunk in _split_message(message):
+                await self._primary_channel.send(chunk)
+
     async def on_ready(self):
         logger.info(f"Ivy connected as {self.user} (id: {self.user.id})")
 
         guild = self.get_guild(self.guild_id)
         if guild:
             logger.info(f"Found guild: {guild.name}")
+            # Use the first text channel as primary posting channel
+            for channel in guild.text_channels:
+                if channel.permissions_for(guild.me).send_messages:
+                    self._primary_channel = channel
+                    logger.info(f"Primary channel: #{channel.name}")
+                    break
         else:
             logger.warning(f"Guild {self.guild_id} not found — check IVY_DISCORD_GUILD_ID")
 
@@ -136,6 +159,17 @@ class IvyDiscordBot(discord.Client):
             self.conversations[message.channel.id] = []
             await message.reply("Conversation cleared. Fresh start.")
             log_entry(self.vault_path, "COMMAND", f"Cleared history in #{message.channel.name}")
+            return
+
+        # /status command — immediate status report
+        if content.lower().strip() == "/status":
+            async with message.channel.typing():
+                if self.heartbeat:
+                    report = await self.heartbeat.get_status_report()
+                else:
+                    report = "🌱 Heartbeat not running — status unavailable."
+            await message.reply(report)
+            log_entry(self.vault_path, "COMMAND", "Status report requested")
             return
 
         # Check for vault save requests
@@ -269,7 +303,7 @@ class IvyDiscordBot(discord.Client):
         )
 
         rel_path = saved_path.relative_to(self.vault_path)
-        location = "knowledge/" if category == "knowledge" else "inbox/drops/"
+        location = "knowledge/" if category == "knowledge" else "_ivy/inbox/drops/"
         return f"Saved to **{rel_path}**\n\nFiled in `{location}` — I can move it if you'd prefer somewhere else."
 
     def _search_vault_for_context(self, message: str) -> str:

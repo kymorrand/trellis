@@ -1,8 +1,11 @@
 """
 Entry point for Ivy's Discord bot.
 Run from the trellis repo root: python scripts/run_discord.py
+
+Starts the Discord bot and heartbeat scheduler as concurrent async tasks.
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -14,6 +17,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
 from trellis.core.config import load_config
+from trellis.core.heartbeat import HeartbeatScheduler
 from trellis.senses.discord_channel import create_bot
 
 logging.basicConfig(
@@ -22,6 +26,32 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("ivy.discord")
+
+
+async def run_bot_with_heartbeat(config: dict):
+    """Run the Discord bot and heartbeat scheduler concurrently."""
+    bot = create_bot(config)
+
+    # Create heartbeat with Discord posting callback
+    heartbeat = HeartbeatScheduler(
+        vault_path=config["vault_path"],
+        budget_monthly=config.get("budget_monthly", 100.0),
+        discord_post_callback=bot.post_to_discord,
+    )
+    bot.set_heartbeat(heartbeat)
+
+    # Start both as concurrent tasks
+    async with bot:
+        heartbeat_task = asyncio.create_task(heartbeat.start())
+        try:
+            await bot.start(config["discord_token"])
+        finally:
+            await heartbeat.stop()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
 
 def main():
@@ -49,9 +79,8 @@ def main():
     except Exception as e:
         logger.warning(f"Ollama: not reachable at {ollama_url} — local routing will fall back to cloud ({e})")
 
-    bot = create_bot(config)
-    logger.info("Starting Ivy Discord bot...")
-    bot.run(config["discord_token"], log_handler=None)
+    logger.info("Starting Ivy Discord bot with heartbeat scheduler...")
+    asyncio.run(run_bot_with_heartbeat(config))
 
 
 if __name__ == "__main__":
