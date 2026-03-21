@@ -36,7 +36,7 @@ def log_action(
         f"- **Cost:** ${cost_usd:.4f}\n\n"
     )
 
-    with open(journal, "a") as f:
+    with open(journal, "a", encoding="utf-8") as f:
         f.write(entry)
 
     logger.debug(f"Audit: {action_type} → {target} (${cost_usd:.4f})")

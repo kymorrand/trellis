@@ -21,7 +21,7 @@ def get_today_journal_path(vault_path: Path) -> Path:
 
     journal_path = journal_dir / f"{today}.md"
     if not journal_path.exists():
-        journal_path.write_text(f"# Ivy Journal — {today}\n\n")
+        journal_path.write_text(f"# Ivy Journal — {today}\n\n", encoding="utf-8")
         logger.info(f"Created new journal: {journal_path}")
 
     return journal_path
@@ -36,5 +36,5 @@ def log_entry(vault_path: Path, entry_type: str, summary: str, details: str = ""
         entry += f"\n{details}\n"
     entry += "\n---\n\n"
 
-    with open(journal, "a") as f:
+    with open(journal, "a", encoding="utf-8") as f:
         f.write(entry)

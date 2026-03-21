@@ -13,6 +13,15 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 
+def _parse_float(value: str, name: str, default: float) -> float:
+    """Parse a float from env, falling back to default on bad input."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid value for {name}: {value!r} — using default {default}")
+        return default
+
+
 def load_config(env_path: str = ".env") -> dict:
     """Load configuration from .env file and return as dict."""
     load_dotenv(env_path)
@@ -33,7 +42,7 @@ def load_config(env_path: str = ".env") -> dict:
         "github_token": os.getenv("IVY_GITHUB_TOKEN"),
         # Runtime
         "vault_path": Path(os.getenv("IVY_VAULT_PATH", "./ivy-vault")),
-        "budget_monthly": float(os.getenv("IVY_BUDGET_MONTHLY", "100.0")),
+        "budget_monthly": _parse_float(os.getenv("IVY_BUDGET_MONTHLY", "100.0"), "IVY_BUDGET_MONTHLY", 100.0),
         "log_level": os.getenv("IVY_LOG_LEVEL", "INFO"),
     }
 
