@@ -79,13 +79,17 @@ class HeartbeatScheduler:
         self._running = False
 
     async def _tick(self):
-        """One heartbeat tick — check what tasks are due and run them."""
+        """One heartbeat tick — check what tasks are due and run them.
+
+        Each task is wrapped individually so a failure in one (e.g. disk full
+        during inbox check) doesn't kill the entire heartbeat loop.
+        """
         self._tick_count += 1
         now = datetime.now()
 
         # --- Every 30 minutes: inbox check ---
         if self._last_inbox_check is None or (now - self._last_inbox_check) >= timedelta(minutes=30):
-            await self._check_inbox(now)
+            await self._run_task("inbox_check", self._check_inbox(now))
             self._last_inbox_check = now
 
         today_str = now.strftime("%Y-%m-%d")
@@ -93,17 +97,24 @@ class HeartbeatScheduler:
         # --- Midnight tasks (run once per day, after midnight) ---
         if now.hour == 0 and self._last_midnight != today_str:
             self._last_midnight = today_str
-            await self._midnight_tasks(now)
+            await self._run_task("midnight_tasks", self._midnight_tasks(now))
 
         # --- 8:00 AM Morning Brief ---
         if now.hour == 8 and now.minute < 2 and self._last_morning != today_str:
             self._last_morning = today_str
-            await self._morning_brief(now)
+            await self._run_task("morning_brief", self._morning_brief(now))
 
         # --- 6:00 PM End of Day ---
         if now.hour == 18 and now.minute < 2 and self._last_eod != today_str:
             self._last_eod = today_str
-            await self._end_of_day(now)
+            await self._run_task("end_of_day", self._end_of_day(now))
+
+    async def _run_task(self, name: str, coro):
+        """Run a heartbeat task with exception isolation."""
+        try:
+            await coro
+        except Exception as e:
+            logger.error(f"Heartbeat task '{name}' failed: {e}", exc_info=True)
 
     # ─── Silent background tasks ─────────────────────────────────────
 
@@ -193,14 +204,18 @@ class HeartbeatScheduler:
         tomorrow = now + timedelta(days=1)
         tomorrow_str = tomorrow.strftime("%Y-%m-%d")
         journal_dir = self.vault_path / "_ivy" / "journal"
-        journal_dir.mkdir(parents=True, exist_ok=True)
 
-        tomorrow_path = journal_dir / f"{tomorrow_str}.md"
-        if not tomorrow_path.exists():
-            tomorrow_path.write_text(
-                f"# Ivy Journal — {tomorrow_str}\n\n", encoding="utf-8"
-            )
-            logger.info(f"Created tomorrow's journal: {tomorrow_str}")
+        try:
+            journal_dir.mkdir(parents=True, exist_ok=True)
+            tomorrow_path = journal_dir / f"{tomorrow_str}.md"
+            if not tomorrow_path.exists():
+                tomorrow_path.write_text(
+                    f"# Ivy Journal — {tomorrow_str}\n\n", encoding="utf-8"
+                )
+                logger.info(f"Created tomorrow's journal: {tomorrow_str}")
+        except OSError as e:
+            logger.error(f"Journal rollover failed: {e}")
+            return
 
         # Summarize today's activity
         today_stats = parse_journal_stats(self.vault_path, now.strftime("%Y-%m-%d"))

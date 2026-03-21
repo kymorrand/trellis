@@ -15,6 +15,8 @@ Features:
 Security: Only processes messages from Kyle's Discord user ID.
 """
 
+import asyncio
+import json
 import logging
 import re
 from collections import defaultdict
@@ -22,6 +24,7 @@ from pathlib import Path
 
 import anthropic
 import discord
+import httpx
 
 from trellis.hands.vault import (
     format_search_results,
@@ -93,6 +96,8 @@ class IvyDiscordBot(discord.Client):
 
         # Per-channel conversation history: {channel_id: [{"role": ..., "content": ...}]}
         self.conversations: dict[int, list[dict]] = defaultdict(list)
+        self._conversations_path = vault_path / "_ivy" / "state" / "conversations.json"
+        self._load_conversations()
 
         # Heartbeat scheduler (set after construction via set_heartbeat)
         self.heartbeat = None
@@ -102,6 +107,29 @@ class IvyDiscordBot(discord.Client):
     def set_heartbeat(self, heartbeat):
         """Attach the heartbeat scheduler to the bot."""
         self.heartbeat = heartbeat
+
+    def _load_conversations(self):
+        """Load persisted conversation history from disk."""
+        if not self._conversations_path.exists():
+            return
+        try:
+            data = json.loads(self._conversations_path.read_text(encoding="utf-8"))
+            for channel_id_str, history in data.items():
+                self.conversations[int(channel_id_str)] = history
+            logger.info(f"Loaded conversations for {len(data)} channels")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load conversations: {e}")
+
+    def _save_conversations(self):
+        """Persist conversation history to disk."""
+        try:
+            self._conversations_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {str(k): v for k, v in self.conversations.items() if v}
+            self._conversations_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+        except OSError as e:
+            logger.warning(f"Failed to save conversations: {e}")
 
     async def post_to_discord(self, message: str):
         """Post a message to the primary channel (used by heartbeat for briefs/alerts)."""
@@ -158,6 +186,7 @@ class IvyDiscordBot(discord.Client):
         # Special commands
         if content.lower() == "!clear":
             self.conversations[message.channel.id] = []
+            self._save_conversations()
             await message.reply("Conversation cleared. Fresh start.")
             log_entry(self.vault_path, "COMMAND", f"Cleared history in #{message.channel.name}")
             return
@@ -194,16 +223,31 @@ class IvyDiscordBot(discord.Client):
                     if explicit_context:
                         vault_context = explicit_context
 
-                result = await self._get_response(
-                    message.channel.id,
-                    content,
-                    vault_context,
-                    channel_name=getattr(message.channel, "name", None) or "direct-message",
+                async with asyncio.timeout(90):
+                    result = await self._get_response(
+                        message.channel.id,
+                        content,
+                        vault_context,
+                        channel_name=getattr(message.channel, "name", None) or "direct-message",
+                    )
+            except TimeoutError:
+                logger.error("Model call timed out (90s)")
+                await message.reply(
+                    "Timed out waiting for a response — the model might be overloaded. "
+                    "Try again, or use `/local` to force local routing."
                 )
+                log_entry(self.vault_path, "ERROR", "Model call timed out (90s)")
+                return
+            except httpx.ConnectError as e:
+                logger.error(f"Connection error: {e}")
+                await message.reply("Can't reach the model right now — Ollama may be down.")
+                log_entry(self.vault_path, "ERROR", f"Connection error: {e}")
+                return
             except Exception as e:
-                logger.error(f"Model error: {e}")
-                await message.reply("Hit an error — check the logs.")
-                log_entry(self.vault_path, "ERROR", f"Model error: {e}")
+                logger.error(f"Model error: {e}", exc_info=True)
+                error_type = type(e).__name__
+                await message.reply(f"Hit an error ({error_type}) — check the logs.")
+                log_entry(self.vault_path, "ERROR", f"Model error ({error_type}): {e}")
                 return
 
         # Append model indicator
@@ -275,6 +319,9 @@ class IvyDiscordBot(discord.Client):
         # Trim history if too long
         if len(history) > MAX_HISTORY * 2:
             history[:] = history[-(MAX_HISTORY * 2):]
+
+        # Persist to disk so history survives restarts
+        self._save_conversations()
 
         return result
 

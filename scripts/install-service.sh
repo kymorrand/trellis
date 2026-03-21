@@ -13,6 +13,16 @@ if [ ! -f "$SERVICE_FILE" ]; then
     exit 1
 fi
 
+# Security: warn if .env is world-readable
+ENV_FILE="$SCRIPT_DIR/../.env"
+if [ -f "$ENV_FILE" ]; then
+    PERMS=$(stat -c "%a" "$ENV_FILE")
+    if [ "$PERMS" != "600" ]; then
+        echo "WARNING: .env has permissions $PERMS (should be 600). Fixing..."
+        chmod 600 "$ENV_FILE"
+    fi
+fi
+
 echo "=== Installing Trellis service ==="
 
 echo "1. Copying service file to $DEST"
