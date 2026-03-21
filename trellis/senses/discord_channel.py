@@ -29,6 +29,7 @@ from trellis.hands.vault import (
     search_vault,
 )
 from trellis.memory.journal import log_entry
+from trellis.mind.context import auto_context
 from trellis.mind.router import ModelRouter, RouteResult
 from trellis.mind.soul import load_soul, load_soul_local
 from trellis.security.audit import log_action
@@ -184,10 +185,14 @@ class IvyDiscordBot(discord.Client):
         # Build conversation and get response
         async with message.channel.typing():
             try:
-                # Check if we should search the vault for context
-                vault_context = ""
+                # Auto-context: search vault for relevant knowledge on every message
+                vault_context = auto_context(self.vault_path, content)
+
+                # Explicit vault search triggers get a deeper, targeted search
                 if SEARCH_TRIGGERS.search(content):
-                    vault_context = self._search_vault_for_context(content)
+                    explicit_context = self._search_vault_for_context(content)
+                    if explicit_context:
+                        vault_context = explicit_context
 
                 result = await self._get_response(
                     message.channel.id,
