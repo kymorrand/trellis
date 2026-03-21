@@ -1,0 +1,25 @@
+[Unit]
+Description=Trellis — Ivy Personal Agent Runtime
+Documentation=https://github.com/kymorrand/trellis
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kyle
+Group=kyle
+WorkingDirectory=/home/kyle/projects/trellis
+EnvironmentFile=/home/kyle/projects/trellis/.env
+ExecStart=/home/kyle/projects/trellis/.venv/bin/python scripts/run_discord.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trellis
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
