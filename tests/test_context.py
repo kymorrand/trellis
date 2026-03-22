@@ -1,9 +1,13 @@
 """Tests for trellis.mind.context — Keyword extraction and auto-context assembly."""
 
-import pytest
-from pathlib import Path
+from __future__ import annotations
 
-from trellis.mind.context import extract_keywords, should_auto_search, auto_context
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from trellis.mind.context import auto_context, extract_keywords, should_auto_search
 
 
 class TestExtractKeywords:
@@ -82,8 +86,8 @@ class TestShouldAutoSearch:
 
 
 class TestAutoContext:
-    @pytest.fixture
-    def vault(self, tmp_path):
+    @pytest.fixture()
+    def vault(self, tmp_path: Path) -> Path:
         """Create a vault with searchable content."""
         knowledge = tmp_path / "knowledge"
         knowledge.mkdir()
@@ -107,26 +111,66 @@ class TestAutoContext:
         (ivy_dir / "2026-03-21.md").write_text("# Journal\nMirror Factory mentioned\n")
         return tmp_path
 
-    def test_finds_relevant_context(self, vault):
-        result = auto_context(vault, "Tell me about Mirror Factory plans")
+    @pytest.mark.asyncio
+    async def test_finds_relevant_context(self, vault: Path) -> None:
+        result = await auto_context(vault, "Tell me about Mirror Factory plans")
         assert "Mirror Factory" in result
 
-    def test_finds_person_context(self, vault):
-        result = auto_context(vault, "Tell me about Bobby Torres and his role")
+    @pytest.mark.asyncio
+    async def test_finds_person_context(self, vault: Path) -> None:
+        result = await auto_context(vault, "Tell me about Bobby Torres and his role")
         assert "Bobby" in result
 
-    def test_short_message_returns_empty(self, vault):
-        result = auto_context(vault, "hi")
+    @pytest.mark.asyncio
+    async def test_short_message_returns_empty(self, vault: Path) -> None:
+        result = await auto_context(vault, "hi")
         assert result == ""
 
-    def test_no_match_returns_empty(self, vault):
-        result = auto_context(vault, "Tell me about quantum computing research")
+    @pytest.mark.asyncio
+    async def test_no_match_returns_empty(self, vault: Path) -> None:
+        result = await auto_context(vault, "Tell me about quantum computing research")
         assert result == ""
 
-    def test_command_returns_empty(self, vault):
-        result = auto_context(vault, "/status check please")
+    @pytest.mark.asyncio
+    async def test_command_returns_empty(self, vault: Path) -> None:
+        result = await auto_context(vault, "/status check please")
         assert result == ""
 
-    def test_nonexistent_vault_returns_empty(self, tmp_path):
-        result = auto_context(tmp_path / "nope", "Tell me about something")
+    @pytest.mark.asyncio
+    async def test_nonexistent_vault_returns_empty(self, tmp_path: Path) -> None:
+        result = await auto_context(tmp_path / "nope", "Tell me about something")
         assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_knowledge_manager_none_uses_keyword_search(self, vault: Path) -> None:
+        """Passing knowledge_manager=None explicitly falls back to keyword search."""
+        result = await auto_context(
+            vault, "Tell me about Mirror Factory plans", knowledge_manager=None
+        )
+        assert "Mirror Factory" in result
+
+    @pytest.mark.asyncio
+    async def test_knowledge_manager_used_when_provided(self, vault: Path) -> None:
+        """When a knowledge_manager is provided, its search is called."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(
+            return_value=[
+                {"path": "knowledge/mirror-factory.md", "matches": ["Mirror Factory info"], "score": 0.9}
+            ]
+        )
+        result = await auto_context(
+            vault, "Tell me about Mirror Factory plans", knowledge_manager=mock_km
+        )
+        mock_km.search.assert_awaited_once()
+        assert "mirror-factory.md" in result
+
+    @pytest.mark.asyncio
+    async def test_knowledge_manager_failure_falls_back(self, vault: Path) -> None:
+        """If hybrid search fails, falls back to keyword search."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(side_effect=RuntimeError("Ollama down"))
+        result = await auto_context(
+            vault, "Tell me about Mirror Factory plans", knowledge_manager=mock_km
+        )
+        # Should still find results via keyword fallback
+        assert "Mirror Factory" in result

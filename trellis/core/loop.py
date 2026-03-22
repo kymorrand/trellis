@@ -17,12 +17,11 @@ tool use. Local models (Ollama) get the simple chat-only path — no tools.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import anthropic
 
@@ -33,14 +32,12 @@ from trellis.hands.vault import (
     search_vault,
 )
 from trellis.memory.compactor import compact_history
-from trellis.memory.journal import log_entry
 from trellis.mind.context import auto_context
 from trellis.mind.router import (
     CLOUD_INDICATOR,
     CLOUD_MODEL,
     COST_INPUT_PER_M,
     COST_OUTPUT_PER_M,
-    LOCAL_INDICATOR,
     ModelRouter,
     RouteResult,
 )
@@ -50,6 +47,7 @@ from trellis.security.permissions import Permission, check_permission
 
 if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
+    from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -186,9 +184,15 @@ TOOL_DEFINITIONS = [
 class ToolExecutor:
     """Executes tools with permission checks and audit logging."""
 
-    def __init__(self, vault_path: Path, agent_state: AgentState | None = None):
+    def __init__(
+        self,
+        vault_path: Path,
+        agent_state: AgentState | None = None,
+        knowledge_manager: KnowledgeManager | None = None,
+    ):
         self.vault_path = vault_path
         self.agent_state = agent_state
+        self.knowledge_manager = knowledge_manager
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool and return the result as a string."""
@@ -232,7 +236,7 @@ class ToolExecutor:
         """Dispatch to the appropriate tool handler."""
         match tool_name:
             case "vault_search":
-                return self._vault_search(tool_input)
+                return await self._vault_search(tool_input)
             case "vault_read":
                 return self._vault_read(tool_input)
             case "vault_save":
@@ -258,9 +262,24 @@ class ToolExecutor:
             case _:
                 return tool_name
 
-    def _vault_search(self, tool_input: dict) -> str:
+    async def _vault_search(self, tool_input: dict) -> str:
+        """Search the vault using hybrid search when available."""
         query = tool_input.get("query", "")
         max_results = tool_input.get("max_results", 5)
+
+        # Use hybrid search if knowledge manager is available
+        if self.knowledge_manager is not None:
+            try:
+                results = await self.knowledge_manager.search(query, limit=max_results)
+                if results:
+                    return format_search_results(results)
+            except Exception:
+                logger.warning(
+                    "Hybrid search failed in vault_search tool, falling back to keyword",
+                    exc_info=True,
+                )
+
+        # Fallback: keyword-only search
         results = search_vault(self.vault_path, query, max_results=max_results)
         if not results:
             return f"No vault items found matching '{query}'."
@@ -343,6 +362,7 @@ class AgentBrain:
         local_system_prompt: str = "",
         agent_state: AgentState | None = None,
         role_name: str = "_default",
+        knowledge_manager: KnowledgeManager | None = None,
     ):
         self.anthropic_client = anthropic_client
         self.router = router
@@ -350,7 +370,10 @@ class AgentBrain:
         self.system_prompt = system_prompt
         self.local_system_prompt = local_system_prompt or system_prompt
         self.agent_state = agent_state
-        self.tool_executor = ToolExecutor(vault_path, agent_state)
+        self.knowledge_manager = knowledge_manager
+        self.tool_executor = ToolExecutor(
+            vault_path, agent_state, knowledge_manager=knowledge_manager
+        )
         self.set_role(role_name)
 
     def set_role(self, role_name: str):
@@ -393,8 +416,10 @@ class AgentBrain:
         message = event.content
         classify_from = message
 
-        # Auto-context: search vault for relevant knowledge
-        vault_context = auto_context(self.vault_path, message)
+        # Auto-context: search vault for relevant knowledge (hybrid when available)
+        vault_context = await auto_context(
+            self.vault_path, message, knowledge_manager=self.knowledge_manager
+        )
 
         # Build the effective message with context
         context_parts = []

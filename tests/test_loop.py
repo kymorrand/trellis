@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from trellis.core.loop import (
+    AgentBrain,
     Event,
     MAX_TOOL_ROUNDS,
     TOOL_DEFINITIONS,
     ToolExecutor,
-    AgentBrain,
 )
 from trellis.security.permissions import Permission
 
@@ -66,7 +66,7 @@ class TestToolDefinitions:
 
 
 class TestToolExecutor:
-    @pytest.fixture
+    @pytest.fixture()
     def vault(self, tmp_path):
         """Minimal vault with journal for testing."""
         # Create vault structure
@@ -87,7 +87,7 @@ class TestToolExecutor:
         # Audit trail dir (needed by log_action)
         return tmp_path
 
-    @pytest.fixture
+    @pytest.fixture()
     def executor(self, vault):
         return ToolExecutor(vault_path=vault)
 
@@ -190,12 +190,43 @@ class TestToolExecutor:
         result = await executor.execute("vault_read", {"path": "knowledge/big.md"})
         assert "truncated" in result
 
+    @pytest.mark.asyncio
+    async def test_vault_search_uses_knowledge_manager(self, vault):
+        """When knowledge_manager is provided, vault_search uses hybrid search."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(
+            return_value=[
+                {"path": "knowledge/test-note.md", "matches": ["hybrid result"], "score": 0.9}
+            ]
+        )
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=mock_km)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        mock_km.search.assert_awaited_once()
+        assert "test-note.md" in result
+
+    @pytest.mark.asyncio
+    async def test_vault_search_fallback_when_hybrid_fails(self, vault):
+        """If hybrid search fails, falls back to keyword search."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(side_effect=RuntimeError("Ollama down"))
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=mock_km)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        # Should still work via keyword fallback
+        assert "test-note.md" in result
+
+    @pytest.mark.asyncio
+    async def test_vault_search_without_knowledge_manager(self, vault):
+        """Without knowledge_manager, vault_search uses keyword search only."""
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=None)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        assert "test-note.md" in result
+
 
 # ─── AgentBrain ──────────────────────────────────────────
 
 
 class TestAgentBrain:
-    @pytest.fixture
+    @pytest.fixture()
     def vault(self, tmp_path):
         knowledge = tmp_path / "knowledge"
         knowledge.mkdir()
@@ -204,18 +235,18 @@ class TestAgentBrain:
         journal_dir.mkdir(parents=True)
         return tmp_path
 
-    @pytest.fixture
+    @pytest.fixture()
     def mock_anthropic(self):
         return MagicMock()
 
-    @pytest.fixture
+    @pytest.fixture()
     def mock_router(self):
         router = MagicMock()
         router._session_cost = 0.0
         router.classify = MagicMock(return_value="cloud")
         return router
 
-    @pytest.fixture
+    @pytest.fixture()
     def brain(self, mock_anthropic, mock_router, vault):
         with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
             return AgentBrain(
@@ -228,6 +259,20 @@ class TestAgentBrain:
     def test_construction(self, brain):
         assert brain.system_prompt == "You are a test assistant."
         assert brain._role_name == "_default"
+
+    def test_construction_with_knowledge_manager(self, mock_anthropic, mock_router, vault):
+        """AgentBrain accepts and stores knowledge_manager."""
+        mock_km = MagicMock()
+        with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
+            brain = AgentBrain(
+                anthropic_client=mock_anthropic,
+                router=mock_router,
+                vault_path=vault,
+                system_prompt="Test",
+                knowledge_manager=mock_km,
+            )
+        assert brain.knowledge_manager is mock_km
+        assert brain.tool_executor.knowledge_manager is mock_km
 
     def test_set_role_fallback(self, brain):
         """Invalid role should fall back gracefully."""
@@ -251,7 +296,7 @@ class TestAgentBrain:
     async def test_process_routes_to_local(self, brain, mock_router):
         """When router classifies as local, should call router.route."""
         mock_router.classify.return_value = "local"
-        from trellis.mind.router import RouteResult, LOCAL_INDICATOR
+        from trellis.mind.router import LOCAL_INDICATOR, RouteResult
         mock_router.route = AsyncMock(return_value=RouteResult(
             response="local response",
             model_used="qwen3:14b",
