@@ -1,33 +1,44 @@
 # Root Status Report — 2026-03-22
 
 ## Task
-Build `GET /api/gardener/status` endpoint for the Gardener Activity page sprint.
+Sprint 2, Phase 1: Semantic search foundation (Tasks 1A, 1B, 1C).
 
 ## Deliverables
 
-### `trellis/senses/web.py` — New endpoint + helper
-- **`_STATUS_RE` / `_GARDEN_REPORT_RE`** — Compiled regexes for filename parsing at module level.
-- **`_parse_report_file(file_path, reports_dir)`** — Pure function that parses a single report markdown file into the API contract format. Returns `None` for non-matching filenames.
-- **`GET /api/gardener/status`** — Reads `_ivy/reports/`, matches `status-{agent}-{date}.md` and `garden-report-{date}.md`, parses title (first `#` heading) and summary (first line after first `##` heading, with 120-char body fallback). Returns sorted JSON: newest date first, alphabetical by agent within same date.
-- Updated module docstring to list `/garden` page and `/api/gardener/status` endpoint.
+### Task 1A: `trellis/memory/embeddings.py` (new) — 10 tests
+- `generate_embedding(text, ollama_url) -> list[float]` — Single text to 768-dim vector via Ollama `/api/embed`.
+- `generate_embeddings_batch(texts, ollama_url) -> list[list[float]]` — Batch generation.
+- Truncates input at 32000 chars (nomic-embed-text context window).
+- Returns `[]` on Ollama connection failure (graceful degradation).
+- Constants: `EMBEDDING_DIM=768`, `EMBEDDING_MODEL="nomic-embed-text"`, `MAX_INPUT_CHARS=32000`.
 
-### `tests/test_gardener_api.py` — 11 tests
-- **TestGardenerStatusEndpoint** (11 tests): Empty reports directory, single status file parsed correctly (all 6 fields), single garden-report parsed correctly, bloom status file agent detection, multiple files sorted by date descending + alphabetical by agent, malformed filename skipped, no-headings fallback summary (120 char cap), missing vault_path returns empty, nonexistent reports dir returns empty, thorn status file type detection, empty file handled gracefully.
+### Task 1B: `trellis/memory/vector_store.py` (new) — 16 tests
+- `VectorStore(db_path)` — SQLite + sqlite-vec for cosine similarity search.
+- Schema: `vault_embeddings` (metadata) + `vec_vault` (virtual vec0 table).
+- Methods: `upsert()`, `search()`, `delete()`, `needs_update()`, `count()`, `close()`.
+- Content hash tracking for incremental indexing.
+- `sqlite-vec>=0.1.6` added to `pyproject.toml` dependencies (Kyle-approved).
+
+### Task 1C: `trellis/memory/knowledge.py` (rewrite) — 12 tests
+- `KnowledgeManager(vault_path, ollama_url)` — Full knowledge management.
+- `index_file(path)` — Index single file with content hash dedup.
+- `index_vault()` — Walk vault, skip internal dirs, batch process in groups of 10.
+- `search(query, limit)` — Hybrid search: 30% keyword (search_vault) + 70% vector (VectorStore).
+- Normalize both score sets to 0-1, merge, deduplicate by path, return top N.
+- Falls back to keyword-only when Ollama is down.
 
 ## Verification
-- `python -m pytest tests/ -v` — **184 passed** in 60.77s (11 new, 0 regressions)
-- `ruff check tests/test_gardener_api.py` — **clean**
-- `ruff check trellis/senses/web.py` — 3 pre-existing warnings (unused `os` import, 2 f-string issues in SSE code), none from new code
-- API response matches the contract defined in `sprint-current.md`
+- `python -m pytest tests/ -v` — **222 passed** in 62.68s (38 new, 0 regressions)
+- `ruff check` — clean on all new files
+- No changes to existing source modules (except knowledge.py stub replacement)
 
-## Scope Note
-Sprint plan assigned `web.py` modification to Root for this API endpoint. The endpoint is pure backend logic (file reading, regex parsing, JSON response) — no frontend changes. Bloom's `/garden` page route is a separate one-liner that Bloom will add.
+## Next
+- Task 1D: Wire hybrid search into context.py and loop.py
+- Task 1E: Wire indexing into startup + heartbeat
 
 ## Data Flow
 ```
-_ivy/reports/*.md  →  _parse_report_file()  →  sort by (date desc, agent asc)  →  {"reports": [...]}
+vault/*.md → KnowledgeManager.index_vault() → embeddings.py → VectorStore (sqlite-vec)
+                                                                     ↓
+query → KnowledgeManager.search() → keyword(30%) + vector(70%) → merged results
 ```
-
-## Dependencies Affected
-- Bloom's `/garden` page will fetch `GET /api/gardener/status` — contract is implemented exactly as specified.
-- No changes to existing endpoints or modules.
