@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trellis — Morning Brief</title>
+  <link rel="stylesheet" href="/static/trellis.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="/static/js/trellis-api.js"></script>
+  <script src="/static/js/circadian.js"></script>
+  <style>
+    body { background: var(--color-cloud); min-height: 100vh; }
+
+    .brief {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: var(--space-6);
+      padding-bottom: var(--space-24);
+    }
+
+    .brief-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: var(--space-8) 0 var(--space-6);
+      border-bottom: 1px solid var(--color-wood-light);
+      margin-bottom: var(--space-6);
+    }
+    .brief-header__greeting {
+      font-family: var(--font-display);
+      font-weight: var(--fraunces-weight);
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 1, "opsz" 36;
+      font-size: var(--text-2xl);
+      color: var(--color-earth);
+      letter-spacing: -0.02em;
+      margin-bottom: var(--space-2);
+    }
+    .brief-header__date {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+      margin-bottom: var(--space-4);
+    }
+    .brief-header__state {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-ivy);
+    }
+    .brief-header__state-dot {
+      width: 8px; height: 8px;
+      background: var(--color-leaf);
+      border-radius: 50%;
+    }
+
+    .trellis-brief-section__header h2 {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 24;
+      font-size: var(--text-lg);
+      color: var(--color-earth);
+      margin-bottom: var(--space-1);
+    }
+    .trellis-brief-section__header p {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+    }
+
+    .quick-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+    }
+    .quick-stat {
+      background: var(--color-cloud-dim);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+    }
+    .quick-stat__label {
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+      margin-bottom: var(--space-1);
+    }
+    .quick-stat__value {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-md);
+      font-weight: 600;
+      color: var(--color-earth);
+    }
+    .quick-stat__trend {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" 0.3, "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-leaf);
+    }
+
+    .activity-item {
+      display: flex;
+      gap: var(--space-3);
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid oklch(68% 0.06 70 / 0.3);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-item__icon {
+      width: 20px; height: 20px;
+      flex-shrink: 0; margin-top: 2px;
+      color: var(--color-ivy);
+    }
+    .activity-item__text {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth);
+      line-height: 1.5;
+    }
+    .activity-item__time {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+      margin-top: var(--space-1);
+    }
+
+    .brief-footer {
+      text-align: center;
+      padding: var(--space-8) 0 var(--space-4);
+      color: var(--color-earth-light);
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+    }
+    .brief-footer__ivy { color: var(--color-ivy); }
+
+    .brief-empty {
+      text-align: center;
+      padding: var(--space-6);
+      color: var(--color-earth-light);
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+    }
+  </style>
+</head>
+<body>
+  <div class="brief">
+    <header class="brief-header">
+      <h1 class="brief-header__greeting" id="greeting">Good morning, Kyle</h1>
+      <div class="brief-header__date" id="header-date">--</div>
+      <div class="brief-header__state">
+        <span class="brief-header__state-dot" id="header-dot"></span>
+        <span id="header-state">connecting...</span>
+      </div>
+    </header>
+
+    <div id="brief-content">
+      <!-- Populated by JS -->
+    </div>
+
+    <footer class="brief-footer">
+      <span class="brief-footer__ivy">Ivy</span> assembled this brief just now
+    </footer>
+  </div>
+
+  <script>
+    gsap.registerPlugin(ScrollTrigger);
+
+    // Header entrance
+    gsap.from('.brief-header', { opacity: 0, y: 20, duration: 0.5, ease: 'power2.out' });
+    gsap.to('#header-dot', { scale: 1.3, opacity: 0.6, duration: 1.5, ease: 'sine.inOut', yoyo: true, repeat: -1 });
+
+    // ─── Activity Icon SVGs ────────────────────────────────
+
+    const activityIcons = {
+      HEARTBEAT_BACKUP: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 10 L8 14 L16 6"/></svg>`,
+      HEARTBEAT_INBOX: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 10 L8 14 L16 6"/></svg>`,
+      HEARTBEAT_COST: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10" cy="10" r="3"/><path d="M10 3 L10 1 M10 19 L10 17 M3 10 L1 10 M19 10 L17 10"/></svg>`,
+      SYSTEM: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M10 4 L10 10 L14 14"/><circle cx="10" cy="10" r="8"/></svg>`,
+      default: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10" cy="10" r="8"/><path d="M10 6 L10 10 M10 14 L10 14"/></svg>`,
+    };
+
+    function getActivityIcon(type) {
+      return activityIcons[type] || activityIcons.default;
+    }
+
+    // ─── Approval Card Actions ─────────────────────────────
+
+    async function approve(id, btn) {
+      const card = btn.closest('.trellis-approval-card');
+      await TrellisAPI.approveItem(id);
+      gsap.timeline()
+        .to(card, { backgroundColor: 'oklch(72% 0.16 138 / 0.2)', borderLeftColor: 'var(--color-leaf)', duration: 0.15 })
+        .to(card, { opacity: 0, x: 30, height: 0, padding: 0, marginBottom: 0, duration: 0.3, ease: 'power2.in', onComplete: () => card.remove() });
+    }
+
+    async function dismiss(id, btn) {
+      const card = btn.closest('.trellis-approval-card');
+      await TrellisAPI.dismissItem(id);
+      gsap.to(card, { opacity: 0, y: 8, height: 0, padding: 0, marginBottom: 0, duration: 0.25, ease: 'power2.in', onComplete: () => card.remove() });
+    }
+
+    // ─── Build Brief Sections ──────────────────────────────
+
+    function buildBrief(data) {
+      const container = document.getElementById('brief-content');
+      container.innerHTML = '';
+
+      // Header
+      document.getElementById('greeting').textContent = data.greeting;
+      document.getElementById('header-date').textContent = data.date;
+      const stateText = `Ivy is online — ${data.agent.state}` +
+        (data.uptime_seconds > 0 ? ` (up ${TrellisAPI.formatUptime(data.uptime_seconds)})` : '');
+      document.getElementById('header-state').textContent = stateText;
+
+      // Overnight Activity
+      const overnightEntries = data.overnight.entries || [];
+      if (overnightEntries.length > 0 || data.overnight.yesterday_stats.cost_usd > 0) {
+        const section = createSection('Overnight Activity', 'While you were away');
+        const content = section.querySelector('.trellis-brief-section__content');
+
+        if (data.overnight.backup_ok) {
+          content.innerHTML += activityItem(
+            'HEARTBEAT_BACKUP',
+            'Nightly vault backup completed',
+            'midnight'
+          );
+        }
+
+        overnightEntries.slice(0, 5).forEach(entry => {
+          content.innerHTML += activityItem(entry.type, entry.type.replace(/_/g, ' ').toLowerCase(), entry.time);
+        });
+
+        if (data.overnight.yesterday_stats.cost_usd > 0) {
+          content.innerHTML += activityItem(
+            'HEARTBEAT_COST',
+            `API spend yesterday: $${data.overnight.yesterday_stats.cost_usd} (monthly: $${data.stats.api_spend_monthly} of $${data.stats.budget_monthly})`,
+            'cost report'
+          );
+        }
+
+        container.appendChild(section);
+      }
+
+      // Queue (Needs Your Input)
+      const queueItems = data.queue || [];
+      if (queueItems.length > 0) {
+        const section = createSection('Needs Your Input', `${queueItems.length} item${queueItems.length > 1 ? 's' : ''} waiting for approval`);
+        const content = section.querySelector('.trellis-brief-section__content');
+
+        queueItems.forEach(item => {
+          content.innerHTML += `
+            <article class="trellis-approval-card" id="approval-${item.id}">
+              <header class="trellis-approval-card__header">
+                <span class="trellis-approval-card__source">Ivy suggests</span>
+                <time class="trellis-timestamp">${TrellisAPI.formatGardenTime((item.created || '').replace(' ', 'T'))}</time>
+              </header>
+              <div class="trellis-approval-card__body">
+                <p>${item.body || item.summary}</p>
+              </div>
+              <div class="trellis-approval-card__actions">
+                <button class="trellis-btn trellis-btn--primary trellis-btn--sm" onclick="approve('${item.id}', this)">Approve</button>
+                <button class="trellis-btn trellis-btn--ghost trellis-btn--sm" onclick="dismiss('${item.id}', this)">Dismiss</button>
+                <button class="trellis-btn trellis-btn--ghost trellis-btn--sm">Redirect</button>
+              </div>
+            </article>
+          `;
+        });
+
+        container.appendChild(section);
+      }
+
+      // Garden Stats
+      const section = createSection('Garden Status', '');
+      const content = section.querySelector('.trellis-brief-section__content');
+      content.innerHTML = `
+        <div class="quick-stats">
+          <div class="quick-stat">
+            <div class="quick-stat__label">Vault items</div>
+            <div class="quick-stat__value">${data.stats.vault_count}</div>
+          </div>
+          <div class="quick-stat">
+            <div class="quick-stat__label">Seeds</div>
+            <div class="quick-stat__value">${data.stats.seeds}</div>
+          </div>
+          <div class="quick-stat">
+            <div class="quick-stat__label">Growing</div>
+            <div class="quick-stat__value">${data.stats.growing}</div>
+          </div>
+          <div class="quick-stat">
+            <div class="quick-stat__label">Evergreen</div>
+            <div class="quick-stat__value">${data.stats.evergreen}</div>
+          </div>
+        </div>
+      `;
+      container.appendChild(section);
+
+      // Animate sections
+      requestAnimationFrame(() => {
+        document.querySelectorAll('.trellis-brief-section').forEach(section => {
+          gsap.from(section.querySelector('.trellis-brief-section__header'), {
+            scrollTrigger: { trigger: section, start: 'top 85%', toggleActions: 'play none none none' },
+            opacity: 0, y: 24, duration: 0.4, ease: 'power2.out'
+          });
+          const children = section.querySelectorAll('.trellis-approval-card, .activity-item, .quick-stat');
+          if (children.length) {
+            gsap.from(children, {
+              scrollTrigger: { trigger: section, start: 'top 78%', toggleActions: 'play none none none' },
+              opacity: 0, y: 16, duration: 0.3, ease: 'power2.out', stagger: 0.07
+            });
+          }
+        });
+      });
+    }
+
+    function createSection(title, subtitle) {
+      const section = document.createElement('section');
+      section.className = 'trellis-brief-section';
+      section.innerHTML = `
+        <header class="trellis-brief-section__header">
+          <h2>${title}</h2>
+          ${subtitle ? `<p>${subtitle}</p>` : ''}
+        </header>
+        <div class="trellis-brief-section__content"></div>
+        <hr class="trellis-brief-section__divider">
+      `;
+      return section;
+    }
+
+    function activityItem(type, text, time) {
+      return `
+        <div class="activity-item">
+          <span class="activity-item__icon">${getActivityIcon(type)}</span>
+          <div>
+            <div class="activity-item__text">${text}</div>
+            <div class="activity-item__time">${time}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ─── Initialize ────────────────────────────────────────
+
+    async function init() {
+      TrellisCircadian.init();
+      try {
+        const data = await TrellisAPI.getBrief();
+        buildBrief(data);
+      } catch (e) {
+        console.warn('Failed to fetch brief:', e);
+        document.getElementById('brief-content').innerHTML =
+          '<div class="brief-empty">Could not load brief data. Is the server running?</div>';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

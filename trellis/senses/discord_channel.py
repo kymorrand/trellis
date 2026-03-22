@@ -101,12 +101,20 @@ class IvyDiscordBot(discord.Client):
 
         # Heartbeat scheduler (set after construction via set_heartbeat)
         self.heartbeat = None
+        # Agent state tracker (set after construction or via constructor)
+        self.agent_state = None
         # Primary channel for posting briefs (set on_ready)
         self._primary_channel = None
+        # Queued startup messages: list of (channel_name, message) to send on_ready
+        self._startup_messages: list[tuple[str, str]] = []
 
     def set_heartbeat(self, heartbeat):
         """Attach the heartbeat scheduler to the bot."""
         self.heartbeat = heartbeat
+
+    def queue_startup_message(self, channel_name: str, message: str):
+        """Queue a message to be sent to a specific channel once the bot is ready."""
+        self._startup_messages.append((channel_name, message))
 
     def _load_conversations(self):
         """Load persisted conversation history from disk."""
@@ -137,6 +145,19 @@ class IvyDiscordBot(discord.Client):
             for chunk in _split_message(message):
                 await self._primary_channel.send(chunk)
 
+    async def post_to_channel(self, channel_name: str, message: str):
+        """Post a message to a specific channel by name."""
+        guild = self.get_guild(self.guild_id)
+        if not guild:
+            logger.warning(f"Guild {self.guild_id} not found — cannot post to #{channel_name}")
+            return
+        for channel in guild.text_channels:
+            if channel.name == channel_name and channel.permissions_for(guild.me).send_messages:
+                for chunk in _split_message(message):
+                    await channel.send(chunk)
+                return
+        logger.warning(f"Channel #{channel_name} not found or not writable")
+
     async def on_ready(self):
         logger.info(f"Ivy connected as {self.user} (id: {self.user.id})")
 
@@ -153,6 +174,11 @@ class IvyDiscordBot(discord.Client):
             logger.warning(f"Guild {self.guild_id} not found — check IVY_DISCORD_GUILD_ID")
 
         log_entry(self.vault_path, "SYSTEM", "Ivy Discord bot connected", f"Guild: {self.guild_id}")
+
+        # Flush any queued startup messages
+        for ch_name, msg in self._startup_messages:
+            await self.post_to_channel(ch_name, msg)
+        self._startup_messages.clear()
 
     async def on_message(self, message: discord.Message):
         # Never respond to ourselves
@@ -204,14 +230,20 @@ class IvyDiscordBot(discord.Client):
 
         # Check for vault save requests
         if SAVE_PATTERNS.match(content):
+            if self.agent_state:
+                self.agent_state.set("acting", "saving to vault")
             async with message.channel.typing():
                 reply = await self._handle_vault_save(message.channel.id, content)
             for chunk in _split_message(reply):
                 await message.reply(chunk)
             log_entry(self.vault_path, "VAULT_SAVE", "Save request from Kyle", content)
+            if self.agent_state:
+                self.agent_state.set("idle")
             return
 
         # Build conversation and get response
+        if self.agent_state:
+            self.agent_state.set("thinking", "processing message")
         async with message.channel.typing():
             try:
                 # Auto-context: search vault for relevant knowledge on every message
@@ -237,17 +269,23 @@ class IvyDiscordBot(discord.Client):
                     "Try again, or use `/local` to force local routing."
                 )
                 log_entry(self.vault_path, "ERROR", "Model call timed out (90s)")
+                if self.agent_state:
+                    self.agent_state.set("idle")
                 return
             except httpx.ConnectError as e:
                 logger.error(f"Connection error: {e}")
                 await message.reply("Can't reach the model right now — Ollama may be down.")
                 log_entry(self.vault_path, "ERROR", f"Connection error: {e}")
+                if self.agent_state:
+                    self.agent_state.set("idle")
                 return
             except Exception as e:
                 logger.error(f"Model error: {e}", exc_info=True)
                 error_type = type(e).__name__
                 await message.reply(f"Hit an error ({error_type}) — check the logs.")
                 log_entry(self.vault_path, "ERROR", f"Model error ({error_type}): {e}")
+                if self.agent_state:
+                    self.agent_state.set("idle")
                 return
 
         # Append model indicator
@@ -276,6 +314,10 @@ class IvyDiscordBot(discord.Client):
             model_used=result.model_used,
             cost_usd=result.cost_usd,
         )
+
+        # Return to idle
+        if self.agent_state:
+            self.agent_state.set("idle")
 
     async def _get_response(
         self,

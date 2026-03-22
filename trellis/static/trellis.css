@@ -1,0 +1,418 @@
+/* ============================================
+   Trellis Design System — CSS Custom Properties
+   ============================================ */
+
+/* --- Fonts --- */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,100..900,0..100,0..1&family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Recursive:slnt,wght,CASL,CRSV,MONO@-15..0,300..1000,0..1,0..1,0..1&display=swap');
+
+:root {
+  /* Colors — Daytime base */
+  --color-sky:          oklch(78% 0.11 230);
+  --color-leaf:         oklch(62% 0.17 145);
+  --color-leaf-light:   oklch(72% 0.16 138);
+  --color-leaf-dark:    oklch(45% 0.14 152);
+  --color-wood:         oklch(52% 0.07 62);
+  --color-wood-light:   oklch(68% 0.06 70);
+  --color-solar:        oklch(62% 0.08 238);
+  --color-ivy:          oklch(74% 0.09 218);
+  --color-wf-yellow:    oklch(82% 0.15 90);
+  --color-wf-red:       oklch(58% 0.17 28);
+  --color-wf-purple:    oklch(55% 0.13 310);
+  --color-cloud:        oklch(96% 0.015 85);
+  --color-cloud-dim:    oklch(92% 0.02 80);
+  --color-earth:        oklch(28% 0.04 55);
+  --color-earth-light:  oklch(40% 0.04 58);
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body:    'Literata', Georgia, serif;
+  --font-code:    'Recursive', 'Courier New', monospace;
+
+  --text-xs:   0.64rem;
+  --text-sm:   0.8rem;
+  --text-base: 1rem;
+  --text-md:   1.25rem;
+  --text-lg:   1.563rem;
+  --text-xl:   1.953rem;
+  --text-2xl:  2.441rem;
+  --text-3xl:  3.052rem;
+
+  /* Spacing */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  /* Circadian typography axes (daytime defaults) */
+  --fraunces-softness: 20;
+  --fraunces-weight:   800;
+  --recursive-casual:  0.2;
+}
+
+/* --- Reset --- */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-variation-settings: "opsz" 16;
+  line-height: 1.6;
+  color: var(--color-earth);
+  background: var(--color-cloud);
+  /* Canvas pages override this with the ambient cream gradient */
+}
+
+/* --- Text --- */
+.trellis-text--display {
+  font-family: var(--font-display);
+  font-weight: var(--fraunces-weight);
+  font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 1, "opsz" 48;
+  font-size: var(--text-3xl);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.trellis-text--h1 {
+  font-family: var(--font-display);
+  font-weight: var(--fraunces-weight);
+  font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 1, "opsz" 32;
+  font-size: var(--text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.trellis-text--h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 24;
+  font-size: var(--text-lg);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.trellis-text--h3 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-md);
+  line-height: 1.3;
+}
+
+.trellis-text--body {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  max-width: 65ch;
+}
+
+.trellis-text--caption {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--color-earth-light);
+}
+
+.trellis-text--meta {
+  font-family: var(--font-code);
+  font-weight: 400;
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--color-earth-light);
+}
+
+/* --- Button --- */
+.trellis-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  user-select: none;
+}
+
+.trellis-btn--sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.trellis-btn--primary {
+  background: var(--color-leaf);
+  color: var(--color-cloud);
+  border-color: var(--color-leaf);
+}
+.trellis-btn--primary:hover {
+  background: var(--color-leaf-dark);
+  border-color: var(--color-leaf-dark);
+}
+.trellis-btn--primary:active {
+  transform: scale(0.98);
+}
+.trellis-btn--primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-leaf-light);
+}
+
+.trellis-btn--secondary {
+  background: var(--color-cloud);
+  color: var(--color-earth);
+  border-color: var(--color-wood);
+}
+.trellis-btn--secondary:hover {
+  background: var(--color-cloud-dim);
+}
+.trellis-btn--secondary:active {
+  transform: scale(0.98);
+}
+.trellis-btn--secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-leaf-light);
+}
+
+.trellis-btn--ghost {
+  background: transparent;
+  color: var(--color-leaf);
+  border-color: transparent;
+}
+.trellis-btn--ghost:hover {
+  background: var(--color-cloud-dim);
+}
+.trellis-btn--ghost:active {
+  transform: scale(0.98);
+}
+
+.trellis-btn--destructive {
+  background: var(--color-wf-red);
+  color: var(--color-cloud);
+  border-color: var(--color-wf-red);
+}
+.trellis-btn--destructive:hover {
+  filter: brightness(0.9);
+}
+
+/* --- Approval Card --- */
+.trellis-approval-card {
+  background: var(--color-cloud);
+  border: 1px solid var(--color-wood-light);
+  border-left: 3px solid var(--color-leaf);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: 0 1px 3px oklch(28% 0.02 55 / 0.08);
+}
+
+.trellis-approval-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.trellis-approval-card__source {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ivy);
+}
+
+.trellis-approval-card__body {
+  margin-bottom: var(--space-3);
+}
+
+.trellis-approval-card__body p {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--color-earth);
+}
+
+.trellis-approval-card__context {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-cloud-dim);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-earth-light);
+}
+
+.trellis-approval-card__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Attention state — animated via GSAP */
+.trellis-approval-card--attention {
+  border-left-color: var(--color-ivy);
+}
+
+/* --- Agent State Indicator --- */
+.trellis-agent-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.trellis-agent-state__avatar {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.trellis-agent-state__avatar svg {
+  width: 100%;
+  height: 100%;
+}
+
+.trellis-agent-state__ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-ivy);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.trellis-agent-state__label {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-earth-light);
+}
+
+.trellis-agent-state__activity {
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  color: var(--color-earth-light);
+}
+
+/* --- Timestamp --- */
+.trellis-timestamp {
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  color: var(--color-earth-light);
+}
+
+/* --- Tag --- */
+.trellis-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-lg);
+  line-height: 1;
+}
+
+.trellis-tag--default {
+  background: var(--color-cloud-dim);
+  color: var(--color-earth);
+  border: 1px solid var(--color-wood-light);
+}
+
+.trellis-tag--leaf {
+  background: oklch(62% 0.17 145 / 0.12);
+  color: var(--color-leaf-dark);
+}
+
+.trellis-tag--ivy {
+  background: oklch(74% 0.09 218 / 0.12);
+  color: var(--color-solar);
+}
+
+/* --- Status Indicator --- */
+.trellis-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.trellis-status__label {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-earth-light);
+}
+
+.trellis-status__value {
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-earth);
+}
+
+/* --- Toast --- */
+.trellis-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-cloud);
+  border: 1px solid var(--color-wood-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px oklch(28% 0.02 55 / 0.12);
+  max-width: 360px;
+}
+
+.trellis-toast--success {
+  border-left: 3px solid var(--color-leaf);
+}
+
+.trellis-toast--warning {
+  border-left: 3px solid var(--color-wf-yellow);
+}
+
+.trellis-toast__message {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-earth);
+}
+
+/* --- Brief Section --- */
+.trellis-brief-section {
+  padding: var(--space-6) 0;
+}
+
+.trellis-brief-section__header {
+  margin-bottom: var(--space-4);
+}
+
+.trellis-brief-section__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.trellis-brief-section__divider {
+  border: none;
+  border-top: 1px solid var(--color-wood-light);
+  margin-top: var(--space-6);
+}
