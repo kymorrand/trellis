@@ -7,6 +7,7 @@ Accessed locally or via Tailscale from other devices.
 Pages:
     /       — Living Canvas (agent state, vault overview)
     /brief  — Morning Brief (phone-first, approval interface)
+    /garden — Gardener Activity (Armando's development reports)
 
 API:
     /api/status              — Dashboard stats
@@ -18,6 +19,7 @@ API:
     /api/queue/{id}/approve  — Approve an item (POST)
     /api/queue/{id}/dismiss  — Dismiss an item (POST)
     /api/brief               — Aggregated morning brief data
+    /api/gardener/status     — Armando agent status reports
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,6 +48,78 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 
 # Directories to skip when scanning vault
 INTERNAL_DIRS = {"_ivy", ".git", ".obsidian", ".trash"}
+
+# Patterns for parsing report filenames
+_STATUS_RE = re.compile(r"^status-([a-z]+)-(\d{4}-\d{2}-\d{2})\.md$")
+_GARDEN_REPORT_RE = re.compile(r"^garden-report-(\d{4}-\d{2}-\d{2})\.md$")
+
+
+def _parse_report_file(file_path: Path, reports_dir: Path) -> dict | None:
+    """Parse a single report markdown file into the API response format.
+
+    Returns None if the filename doesn't match expected patterns.
+    """
+    name = file_path.name
+
+    # Determine agent, type, and date from filename
+    status_match = _STATUS_RE.match(name)
+    garden_match = _GARDEN_REPORT_RE.match(name)
+
+    if status_match:
+        agent = status_match.group(1)
+        date = status_match.group(2)
+        report_type = "status"
+    elif garden_match:
+        agent = "thorn"
+        date = garden_match.group(1)
+        report_type = "garden-report"
+    else:
+        return None
+
+    # Parse file content for title and summary
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except OSError:
+        content = ""
+
+    title = ""
+    summary = ""
+
+    lines = content.splitlines()
+
+    # Title: first # heading
+    for line in lines:
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+
+    # Summary: first non-empty line after first ## heading
+    found_h2 = False
+    for line in lines:
+        if line.startswith("## "):
+            found_h2 = True
+            continue
+        if found_h2 and line.strip():
+            summary = line.strip()
+            break
+
+    # Fallback: first 120 chars of body (skip title line)
+    if not summary and not found_h2:
+        body_lines = [ln for ln in lines if not ln.startswith("# ") and ln.strip()]
+        body_text = " ".join(body_lines).strip()
+        summary = body_text[:120]
+
+    # Relative path from vault root
+    rel_path = str(file_path.relative_to(reports_dir.parent.parent))
+
+    return {
+        "agent": agent,
+        "type": report_type,
+        "date": date,
+        "title": title,
+        "summary": summary,
+        "file_path": rel_path,
+    }
 
 
 def create_app(
@@ -446,5 +521,33 @@ def create_app(
                 "budget_monthly": config.get("budget_monthly", 100.0) if config else 100.0,
             },
         }
+
+    # ─── API: Gardener Status ─────────────────────────────────────
+
+    @app.get("/api/gardener/status")
+    async def api_gardener_status():
+        """Armando agent status reports and garden reports."""
+        if not vault_path:
+            return {"reports": []}
+
+        reports_dir = vault_path / "_ivy" / "reports"
+        if not reports_dir.is_dir():
+            return {"reports": []}
+
+        reports = []
+        for f in reports_dir.iterdir():
+            if not f.is_file() or f.suffix != ".md":
+                continue
+            parsed = _parse_report_file(f, reports_dir)
+            if parsed is not None:
+                reports.append(parsed)
+
+        # Sort: newest date first, then alphabetical by agent
+        reports.sort(key=lambda r: (-r["date"].replace("-", "").zfill(8).__hash__(), r["agent"]))
+        # Proper sort: date descending, agent ascending
+        reports.sort(key=lambda r: r["agent"])
+        reports.sort(key=lambda r: r["date"], reverse=True)
+
+        return {"reports": reports}
 
     return app
