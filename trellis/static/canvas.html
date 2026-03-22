@@ -107,6 +107,7 @@
     .zone-greenhouse {
       grid-column: 2;
       grid-row: 2;
+      position: relative;
       padding: var(--space-6);
       display: flex;
       flex-direction: column;
@@ -114,6 +115,19 @@
       justify-content: flex-start;
       padding-top: var(--space-12);
       gap: var(--space-6);
+    }
+    .zone-greenhouse::before {
+      content: '';
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, oklch(74% 0.09 218 / 0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+      border-radius: 50%;
     }
 
     .agent-state-display {
@@ -168,6 +182,23 @@
     .trellis-vault-card:hover { box-shadow: 0 2px 8px oklch(28% 0.02 55 / 0.12); }
     .trellis-vault-card--seed { border-style: dashed; opacity: 0.8; }
     .trellis-vault-card--evergreen { border-width: 2px; border-color: var(--color-wood); }
+    .trellis-vault-card--recent {
+      box-shadow: 0 0 0 1px oklch(82% 0.15 90 / 0.3), 0 1px 3px oklch(28% 0.02 55 / 0.08);
+    }
+
+    .garden-stage-label {
+      padding: var(--space-2) 0;
+      margin-top: var(--space-4);
+      color: var(--color-wood-light);
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .garden-stage-label:first-child {
+      margin-top: 0;
+    }
     .trellis-vault-card__content { flex: 1; min-width: 0; }
     .trellis-vault-card__title {
       font-family: var(--font-body);
@@ -281,6 +312,7 @@
         </div>
         <div class="agent-label" id="agent-label">connecting...</div>
         <div class="agent-activity" id="agent-activity"></div>
+        <div class="agent-last-action trellis-timestamp" id="agent-last-action"></div>
       </div>
       <div class="greenhouse-queue" id="greenhouse-queue"></div>
     </div>
@@ -326,6 +358,14 @@
       reporting: 'var(--color-ivy)',
     };
 
+    const defaultLabels = {
+      idle: 'All quiet in the garden',
+      thinking: 'Processing...',
+      acting: 'Working on something',
+      waiting: 'Needs your attention',
+      reporting: 'Has something to share',
+    };
+
     function setState(newState, detail = '') {
       if (currentState === newState) return;
       if (currentTimeline) { currentTimeline.kill(); currentTimeline = null; }
@@ -334,7 +374,7 @@
 
       // Update text
       gsap.to(label, { opacity: 0, duration: 0.15, ease: 'power2.in', onComplete: () => {
-        label.textContent = detail || newState;
+        label.textContent = detail || defaultLabels[newState] || newState;
         gsap.to(label, { opacity: 1, duration: 0.2, ease: 'power2.out' });
       }});
       gsap.to(activity, { opacity: 0, duration: 0.15, ease: 'power2.in', onComplete: () => {
@@ -386,16 +426,38 @@
       const container = document.getElementById('garden-items');
       container.innerHTML = '';
 
+      // Sort by growth stage, then by modified date
+      const stageOrder = { evergreen: 0, growing: 1, seed: 2 };
+      items.sort((a, b) => {
+        const stageDiff = (stageOrder[a.growth_stage] || 2) - (stageOrder[b.growth_stage] || 2);
+        if (stageDiff !== 0) return stageDiff;
+        return new Date(b.modified) - new Date(a.modified);
+      });
+
+      const stageLabels = { evergreen: '\u{1f333} Evergreen', growing: '\u{1f33f} Growing', seed: '\u{1f331} Seeds' };
+      let lastStage = null;
+
       items.forEach(item => {
+        // Insert group header when stage changes
+        if (item.growth_stage !== lastStage) {
+          const header = document.createElement('div');
+          header.className = 'garden-stage-label trellis-text--meta';
+          header.textContent = stageLabels[item.growth_stage] || item.growth_stage;
+          container.appendChild(header);
+          lastStage = item.growth_stage;
+        }
+
         const stageClass = item.growth_stage === 'seed' ? ' trellis-vault-card--seed'
                          : item.growth_stage === 'evergreen' ? ' trellis-vault-card--evergreen'
                          : '';
+        const isRecent = (new Date() - new Date(item.modified)) < 86400000;
+        const recentClass = isRecent ? ' trellis-vault-card--recent' : '';
         const tags = (item.tags || []).map(t =>
           `<span class="trellis-tag trellis-tag--default">${t}</span>`
         ).join('');
 
         const card = document.createElement('article');
-        card.className = `trellis-vault-card${stageClass}`;
+        card.className = `trellis-vault-card${stageClass}${recentClass}`;
         card.innerHTML = `
           <span class="growth-icon">${TrellisAPI.growthSVG(item.growth_stage)}</span>
           <div class="trellis-vault-card__content">
@@ -488,7 +550,7 @@
       setInterval(updateStats, 60000);
 
       try {
-        const vault = await TrellisAPI.getVaultItems(9);
+        const vault = await TrellisAPI.getVaultItems(24);
         renderVaultCards(vault.items || []);
       } catch (e) {
         console.warn('Failed to fetch vault items:', e);
@@ -501,10 +563,27 @@
         console.warn('Failed to fetch queue:', e);
       }
 
-      // Connect to agent state SSE
-      TrellisAPI.connectStateStream((stateData) => {
+      // Fetch last action for Greenhouse zone
+      try {
+        const journal = await TrellisAPI.getJournalRecent(1);
+        if (journal.entries && journal.entries.length > 0) {
+          const entry = journal.entries[0];
+          document.getElementById('agent-last-action').textContent =
+            `Last: ${entry.summary || entry.type} at ${entry.time}`;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch last action:', e);
+      }
+
+      // Connect to agent state SSE with disconnect indicator
+      const es = TrellisAPI.connectStateStream((stateData) => {
         setState(stateData.state, stateData.detail);
+        document.getElementById('stat-vault')?.classList.remove('disconnected');
       });
+      es.onerror = () => {
+        console.warn('SSE connection lost, reconnecting...');
+        document.getElementById('stat-vault')?.classList.add('disconnected');
+      };
 
       // Fallback: set idle if SSE hasn't fired after 2s
       setTimeout(() => {
@@ -512,7 +591,94 @@
       }, 2000);
     }
 
-    init();
+    // ─── Task 5: Ambient Life ─────────────────────────────
+
+    function createAmbientParticles() {
+      const container = document.createElement('div');
+      container.className = 'ambient-container';
+      container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:1;overflow:hidden;';
+      document.body.appendChild(container);
+
+      for (let i = 0; i < 12; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'ambient-particle';
+        dot.style.cssText = `
+          position: absolute;
+          width: ${2 + Math.random() * 3}px;
+          height: ${2 + Math.random() * 3}px;
+          background: var(--color-wood-light);
+          border-radius: 50%;
+          opacity: ${0.1 + Math.random() * 0.15};
+          left: ${Math.random() * 100}%;
+          top: ${Math.random() * 100}%;
+        `;
+        container.appendChild(dot);
+
+        gsap.to(dot, {
+          x: `+=${-30 + Math.random() * 60}`,
+          y: `+=${-20 + Math.random() * 40}`,
+          duration: 15 + Math.random() * 20,
+          ease: 'none',
+          repeat: -1,
+          yoyo: true,
+        });
+      }
+    }
+
+    let breathingTween = null;
+    function gardenBreathing() {
+      const cards = document.querySelectorAll('.trellis-vault-card');
+      if (cards.length === 0) return;
+      if (breathingTween) { breathingTween.kill(); breathingTween = null; }
+
+      const randomCard = cards[Math.floor(Math.random() * cards.length)];
+      breathingTween = gsap.to(randomCard, {
+        boxShadow: '0 2px 8px oklch(28% 0.02 55 / 0.12)',
+        duration: 2,
+        ease: 'sine.inOut',
+        yoyo: true,
+        repeat: 1,
+        onComplete: () => {
+          gsap.set(randomCard, { clearProps: 'boxShadow' });
+          breathingTween = null;
+        }
+      });
+    }
+
+    // ─── Task 6: Stability Hardening ────────────────────
+
+    function scheduleNextMidnightReset() {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setDate(midnight.getDate() + 1);
+      midnight.setHours(0, 0, 0, 0);
+      const msUntilMidnight = midnight - now;
+
+      setTimeout(() => {
+        TrellisCircadian.init();
+        scheduleNextMidnightReset();
+        console.log('Circadian recalculated for new day');
+      }, msUntilMidnight);
+    }
+
+    // Soft reset every 6 hours
+    setInterval(() => {
+      gsap.killTweensOf('.ambient-particle');
+      document.querySelector('.ambient-container')?.remove();
+      createAmbientParticles();
+
+      updateStats();
+      TrellisAPI.getVaultItems(24).then(v => renderVaultCards(v.items || []));
+      TrellisAPI.getQueue().then(q => renderQueueCards(q.items || []));
+
+      console.log('Soft reset completed at', new Date().toISOString());
+    }, 6 * 60 * 60 * 1000);
+
+    init().then(() => {
+      createAmbientParticles();
+      setInterval(gardenBreathing, 30000);
+      scheduleNextMidnightReset();
+    });
   </script>
 </body>
 </html>

@@ -144,6 +144,27 @@
       font-family: var(--font-body);
       font-size: var(--text-sm);
     }
+
+    .garden-health__bar {
+      display: flex;
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: var(--color-cloud-dim);
+      margin-bottom: var(--space-3);
+    }
+    .garden-health__segment--seed { background: var(--color-leaf-light); }
+    .garden-health__segment--growing { background: var(--color-leaf); }
+    .garden-health__segment--evergreen { background: var(--color-leaf-dark); }
+    .garden-health__legend {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+      margin-bottom: var(--space-4);
+    }
   </style>
 </head>
 <body>
@@ -277,6 +298,18 @@
       const section = createSection('Garden Status', '');
       const content = section.querySelector('.trellis-brief-section__content');
       content.innerHTML = `
+        <div class="garden-health">
+          <div class="garden-health__bar">
+            <div class="garden-health__segment garden-health__segment--evergreen" style="flex: ${data.stats.evergreen}"></div>
+            <div class="garden-health__segment garden-health__segment--growing" style="flex: ${data.stats.growing}"></div>
+            <div class="garden-health__segment garden-health__segment--seed" style="flex: ${data.stats.seeds}"></div>
+          </div>
+          <div class="garden-health__legend">
+            <span>\u{1f331} ${data.stats.seeds} seeds</span>
+            <span>\u{1f33f} ${data.stats.growing} growing</span>
+            <span>\u{1f333} ${data.stats.evergreen} evergreen</span>
+          </div>
+        </div>
         <div class="quick-stats">
           <div class="quick-stat">
             <div class="quick-stat__label">Vault items</div>
@@ -330,12 +363,27 @@
       return section;
     }
 
+    const eventDescriptions = {
+      'HEARTBEAT_BACKUP': 'Nightly vault backup completed',
+      'HEARTBEAT_INBOX': 'Inbox check \u2014 nothing new',
+      'HEARTBEAT_COST': 'API cost report logged',
+      'HEARTBEAT_BRIEF': 'Morning brief assembled',
+      'HEARTBEAT_EOD': 'End of day summary posted',
+      'SYSTEM': 'System event',
+      'COMMAND': 'Command processed',
+      'MESSAGE_IN': 'Message received',
+      'MESSAGE_OUT': 'Response sent',
+      'VAULT_SAVE': 'Saved to vault',
+      'QUEUE': 'Item added to approval queue',
+    };
+
     function activityItem(type, text, time) {
+      const description = eventDescriptions[type] || text;
       return `
         <div class="activity-item">
           <span class="activity-item__icon">${getActivityIcon(type)}</span>
           <div>
-            <div class="activity-item__text">${text}</div>
+            <div class="activity-item__text">${description}</div>
             <div class="activity-item__time">${time}</div>
           </div>
         </div>

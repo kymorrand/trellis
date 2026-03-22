@@ -415,8 +415,16 @@ def create_app(
             "state": "idle", "detail": "", "changed_at": now.isoformat()
         }
 
+        hour = now.hour
+        if hour < 12:
+            greeting = "Good morning, Kyle"
+        elif hour < 17:
+            greeting = "Good afternoon, Kyle"
+        else:
+            greeting = "Good evening, Kyle"
+
         return {
-            "greeting": f"Good morning, Kyle",
+            "greeting": greeting,
             "date": now.strftime("%A, %B %d, %Y"),
             "agent": agent,
             "uptime_seconds": uptime_seconds,
