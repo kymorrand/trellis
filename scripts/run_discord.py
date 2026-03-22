@@ -22,6 +22,7 @@ from trellis.core.agent_state import AgentState
 from trellis.core.config import load_config
 from trellis.core.heartbeat import HeartbeatScheduler
 from trellis.core.queue import ApprovalQueue
+from trellis.memory.knowledge import KnowledgeManager
 from trellis.senses.discord_channel import create_bot
 from trellis.senses.web import create_app
 
@@ -33,21 +34,53 @@ logging.basicConfig(
 logger = logging.getLogger("ivy")
 
 
+async def _index_vault_background(knowledge_manager: KnowledgeManager) -> None:
+    """Run vault indexing in the background — don't block bot startup."""
+    try:
+        from trellis.memory.journal import log_entry
+
+        logger.info("Background vault indexing started")
+        stats = await knowledge_manager.index_vault()
+        logger.info(
+            "Vault indexing complete: %d indexed, %d skipped, %d errors",
+            stats["indexed"],
+            stats["skipped"],
+            stats["errors"],
+        )
+        log_entry(
+            knowledge_manager.vault_path,
+            "SYSTEM",
+            "Vault indexing complete",
+            f"Indexed: {stats['indexed']}, Skipped: {stats['skipped']}, Errors: {stats['errors']}",
+        )
+    except Exception as e:
+        logger.error("Background vault indexing failed: %s", e, exc_info=True)
+
+
 async def run_all(config: dict):
     """Run Discord bot, web server, and heartbeat as concurrent async tasks."""
     # Shared state objects
     agent_state = AgentState()
     approval_queue = ApprovalQueue(vault_path=config["vault_path"])
 
+    # Knowledge manager for hybrid search
+    ollama_url = config.get("ollama_url", "http://localhost:11434")
+    knowledge_manager = KnowledgeManager(
+        vault_path=config["vault_path"],
+        ollama_url=ollama_url,
+    )
+
     # Discord bot
     bot = create_bot(config)
     bot.set_agent_state(agent_state)
+    bot.set_knowledge_manager(knowledge_manager)
 
     # Heartbeat scheduler
     heartbeat = HeartbeatScheduler(
         vault_path=config["vault_path"],
         budget_monthly=config.get("budget_monthly", 100.0),
         discord_post_callback=bot.post_to_discord,
+        knowledge_manager=knowledge_manager,
     )
     bot.set_heartbeat(heartbeat)
 
@@ -78,10 +111,14 @@ async def run_all(config: dict):
         except Exception as e:
             logger.warning(f"Failed to load startup message: {e}")
 
-    # Start all three as concurrent tasks
+    # Start all as concurrent tasks
     async with bot:
         heartbeat_task = asyncio.create_task(heartbeat.start())
         web_task = asyncio.create_task(web_server.serve())
+
+        # Background vault indexing — non-blocking
+        index_task = asyncio.create_task(_index_vault_background(knowledge_manager))
+
         logger.info("All systems online — Discord + Web (:8420) + Heartbeat")
         try:
             await bot.start(config["discord_token"])
@@ -89,9 +126,14 @@ async def run_all(config: dict):
             # Graceful shutdown
             await heartbeat.stop()
             heartbeat_task.cancel()
+            index_task.cancel()
             web_server.should_exit = True
             try:
                 await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await index_task
             except asyncio.CancelledError:
                 pass
             await web_task

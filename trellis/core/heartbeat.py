@@ -10,18 +10,25 @@ anything, the world keeps running.
 
 Schedule:
     Every 30 min  — Check inbox for new items (silent)
+    Every 6 hours — Reindex vault for semantic search (silent)
     Midnight      — Nightly backup, journal rollover, cost report (silent)
     8:00 AM       — Morning brief (→ Discord)
     6:00 PM       — End of day summary (→ Discord)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import subprocess
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from trellis.memory.journal import get_today_journal_path, log_entry
+from trellis.memory.journal import log_entry
+
+if TYPE_CHECKING:
+    from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +41,17 @@ class HeartbeatScheduler:
         vault_path: Path,
         budget_monthly: float = 100.0,
         discord_post_callback=None,
+        knowledge_manager: KnowledgeManager | None = None,
     ):
         self.vault_path = Path(vault_path)
         self.budget_monthly = budget_monthly
         self._discord_post = discord_post_callback
+        self.knowledge_manager = knowledge_manager
         self._running = False
         self._started_at: datetime | None = None
         self._tick_count = 0
         self._last_inbox_check: datetime | None = None
+        self._last_reindex: datetime | None = None
         self._last_midnight: str | None = None  # date string of last midnight run
         self._last_morning: str | None = None
         self._last_eod: str | None = None
@@ -92,6 +102,12 @@ class HeartbeatScheduler:
             await self._run_task("inbox_check", self._check_inbox(now))
             self._last_inbox_check = now
 
+        # --- Every 6 hours: vault reindex for semantic search ---
+        if self.knowledge_manager is not None:
+            if self._last_reindex is None or (now - self._last_reindex) >= timedelta(hours=6):
+                await self._run_task("vault_reindex", self._reindex_vault())
+                self._last_reindex = now
+
         today_str = now.strftime("%Y-%m-%d")
 
         # --- Midnight tasks (run once per day, after midnight) ---
@@ -139,6 +155,25 @@ class HeartbeatScheduler:
             logger.info(f"Heartbeat: {len(new_files)} items in inbox")
         else:
             logger.debug("Heartbeat: inbox empty")
+
+    async def _reindex_vault(self):
+        """Reindex vault for semantic search — picks up new/changed files."""
+        if self.knowledge_manager is None:
+            return
+
+        logger.info("Heartbeat: reindexing vault for semantic search")
+        stats = await self.knowledge_manager.index_vault()
+        log_entry(
+            self.vault_path,
+            "HEARTBEAT_REINDEX",
+            f"Vault reindex: {stats['indexed']} indexed, {stats['skipped']} skipped, {stats['errors']} errors",
+        )
+        logger.info(
+            "Heartbeat: vault reindex complete — %d indexed, %d skipped, %d errors",
+            stats["indexed"],
+            stats["skipped"],
+            stats["errors"],
+        )
 
     async def _midnight_tasks(self, now: datetime):
         """Run all midnight tasks: backup, journal rollover, cost report."""

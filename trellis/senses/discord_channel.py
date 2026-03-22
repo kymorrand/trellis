@@ -33,7 +33,6 @@ from trellis.hands.vault import (
     search_vault,
 )
 from trellis.memory.journal import log_entry
-from trellis.mind.context import auto_context
 from trellis.mind.router import ModelRouter, RouteResult
 from trellis.mind.soul import load_soul, load_soul_local
 from trellis.security.audit import log_action
@@ -127,6 +126,11 @@ class IvyDiscordBot(discord.Client):
         self.agent_state = agent_state
         self.brain.agent_state = agent_state
         self.brain.tool_executor.agent_state = agent_state
+
+    def set_knowledge_manager(self, knowledge_manager):
+        """Attach the knowledge manager to the brain for hybrid search."""
+        self.brain.knowledge_manager = knowledge_manager
+        self.brain.tool_executor.knowledge_manager = knowledge_manager
 
     def queue_startup_message(self, channel_name: str, message: str):
         """Queue a message to be sent to a specific channel once the bot is ready."""
