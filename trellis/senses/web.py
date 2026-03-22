@@ -5,8 +5,9 @@ Serves Trellis UI via FastAPI on Greenhouse.
 Accessed locally or via Tailscale from other devices.
 
 Pages:
-    /       — Living Canvas (agent state, vault overview)
-    /brief  — Morning Brief (phone-first, approval interface)
+    /        — Living Canvas (agent state, vault overview)
+    /brief   — Morning Brief (phone-first, approval interface)
+    /garden  — Gardener Activity (Armando's development reports)
 
 API:
     /api/status              — Dashboard stats
@@ -18,6 +19,7 @@ API:
     /api/queue/{id}/approve  — Approve an item (POST)
     /api/queue/{id}/dismiss  — Dismiss an item (POST)
     /api/brief               — Aggregated morning brief data
+    /api/gardener/status     — Armando's development activity reports
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -72,6 +73,11 @@ def create_app(
     async def brief():
         """Morning Brief — phone-first approval interface."""
         return (STATIC_DIR / "brief.html").read_text(encoding="utf-8")
+
+    @app.get("/garden", response_class=HTMLResponse)
+    async def garden():
+        """Gardener Activity — Armando's development reports."""
+        return (STATIC_DIR / "garden.html").read_text(encoding="utf-8")
 
     # ─── API: Status ──────────────────────────────────────────────
 
@@ -251,7 +257,7 @@ def create_app(
                 yield f"event: state\ndata: {data}\n\n"
                 while True:
                     await asyncio.sleep(30)
-                    yield f"event: ping\ndata: {{}}\n\n"
+                    yield "event: ping\ndata: {}\n\n"
 
             return StreamingResponse(empty_stream(), media_type="text/event-stream",
                                      headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
@@ -269,7 +275,7 @@ def create_app(
                         yield f"event: state\ndata: {data}\n\n"
                     except asyncio.TimeoutError:
                         # Send keepalive ping
-                        yield f"event: ping\ndata: {{}}\n\n"
+                        yield "event: ping\ndata: {}\n\n"
             except asyncio.CancelledError:
                 pass
             finally:
