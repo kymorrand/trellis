@@ -41,7 +41,7 @@ async def run_all(config: dict):
 
     # Discord bot
     bot = create_bot(config)
-    bot.agent_state = agent_state
+    bot.set_agent_state(agent_state)
 
     # Heartbeat scheduler
     heartbeat = HeartbeatScheduler(

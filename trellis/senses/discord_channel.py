@@ -26,6 +26,7 @@ import anthropic
 import discord
 import httpx
 
+from trellis.core.loop import AgentBrain, Event
 from trellis.hands.vault import (
     format_search_results,
     save_to_vault,
@@ -94,6 +95,15 @@ class IvyDiscordBot(discord.Client):
             ollama_url=self.ollama_url,
         )
 
+        # Agent brain — ReAct loop with tool calling
+        self.brain = AgentBrain(
+            anthropic_client=self.anthropic_client,
+            router=self.router,
+            vault_path=self.vault_path,
+            system_prompt=self.system_prompt,
+            local_system_prompt=self.local_system_prompt,
+        )
+
         # Per-channel conversation history: {channel_id: [{"role": ..., "content": ...}]}
         self.conversations: dict[int, list[dict]] = defaultdict(list)
         self._conversations_path = vault_path / "_ivy" / "state" / "conversations.json"
@@ -111,6 +121,12 @@ class IvyDiscordBot(discord.Client):
     def set_heartbeat(self, heartbeat):
         """Attach the heartbeat scheduler to the bot."""
         self.heartbeat = heartbeat
+
+    def set_agent_state(self, agent_state):
+        """Attach the agent state tracker to the bot and brain."""
+        self.agent_state = agent_state
+        self.brain.agent_state = agent_state
+        self.brain.tool_executor.agent_state = agent_state
 
     def queue_startup_message(self, channel_name: str, message: str):
         """Queue a message to be sent to a specific channel once the bot is ready."""
@@ -241,25 +257,15 @@ class IvyDiscordBot(discord.Client):
                 self.agent_state.set("idle")
             return
 
-        # Build conversation and get response
+        # Build conversation and get response via AgentBrain
         if self.agent_state:
             self.agent_state.set("thinking", "processing message")
         async with message.channel.typing():
             try:
-                # Auto-context: search vault for relevant knowledge on every message
-                vault_context = auto_context(self.vault_path, content)
-
-                # Explicit vault search triggers get a deeper, targeted search
-                if SEARCH_TRIGGERS.search(content):
-                    explicit_context = self._search_vault_for_context(content)
-                    if explicit_context:
-                        vault_context = explicit_context
-
-                async with asyncio.timeout(90):
+                async with asyncio.timeout(120):
                     result = await self._get_response(
                         message.channel.id,
                         content,
-                        vault_context,
                         channel_name=getattr(message.channel, "name", None) or "direct-message",
                     )
             except TimeoutError:
@@ -326,35 +332,21 @@ class IvyDiscordBot(discord.Client):
         vault_context: str = "",
         channel_name: str = "",
     ) -> RouteResult:
-        """Route message to the appropriate model and return response."""
+        """Process message through AgentBrain (ReAct loop with tool calling)."""
         history = self.conversations[channel_id]
 
-        # Situational context so the model knows where the conversation is
-        context_prefix = ""
-        if channel_name:
-            context_prefix = (
-                f"[You are chatting with Kyle in Discord channel #{channel_name}. "
-                f"Use this context if relevant to the conversation.]\n\n"
-            )
-
-        # Build the effective message — include situational + vault context
-        effective_message = context_prefix + user_message
-        if vault_context:
-            effective_message += (
-                "\n\n[Vault search results for context — use these to inform your answer]\n"
-                + vault_context
-            )
-
-        # Route to appropriate model (classify on original, send enriched)
-        result = await self.router.route(
-            message=effective_message,
-            system_prompt=self.system_prompt,
-            history=history,
-            classify_from=user_message,
-            local_system_prompt=self.local_system_prompt,
+        # Create event for the brain
+        event = Event(
+            source="discord",
+            content=user_message,
+            channel_id=channel_id,
+            channel_name=channel_name,
         )
 
-        # Update conversation history with the original message (not vault-enriched)
+        # Process through the brain (handles context assembly, routing, tool calling)
+        result = await self.brain.process(event, history)
+
+        # Update conversation history with the original message
         history.append({"role": "user", "content": user_message})
         history.append({"role": "assistant", "content": result.response})
 

@@ -159,7 +159,7 @@ class ModelRouter:
                     "model": LOCAL_MODEL,
                     "messages": messages,
                     "stream": False,
-                    "options": {"num_predict": 300},
+                    "options": {"num_predict": 1024},
                 },
             )
             resp.raise_for_status()
