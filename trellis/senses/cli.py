@@ -21,7 +21,7 @@ from trellis.core.config import load_config
 from trellis.core.loop import AgentBrain, Event
 from trellis.memory.journal import log_entry
 from trellis.mind.router import ModelRouter
-from trellis.mind.soul import load_soul, load_soul_local
+from trellis.mind.soul import load_kyle, load_kyle_local, load_soul, load_soul_local
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,14 @@ async def run_cli(config: dict):
         print("Error: SOUL.md not found. Run from the trellis repo root.")
         return
 
+    # Append Kyle's context model
+    kyle_context = load_kyle(vault_path)
+    if kyle_context:
+        system_prompt += "\n\n---\n\n" + kyle_context
+    kyle_context_local = load_kyle_local(vault_path)
+    if kyle_context_local:
+        local_system_prompt += "\n\n---\n\n" + kyle_context_local
+
     brain = AgentBrain(
         anthropic_client=anthropic_client,
         router=router,
@@ -57,7 +65,7 @@ async def run_cli(config: dict):
     history: list[dict] = []
     print("\n\033[32m🌱 Ivy CLI — type a message, 'quit' to exit, '!clear' to reset\033[0m")
     print(f"   Vault: {vault_path}")
-    print(f"   Tools: vault_search, vault_read, vault_save, shell_execute, journal_read")
+    print("   Tools: vault_search, vault_read, vault_save, shell_execute, journal_read")
     print()
 
     while True:

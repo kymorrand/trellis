@@ -1,8 +1,13 @@
 """
-trellis.mind.soul — SOUL.md Loader & Personality Engine
+trellis.mind.soul — SOUL.md & kyle.md Loader & Personality Engine
 
 Loads and parses the agent's SOUL.md file — the personality,
 constraints, and behavioral rules that define who Ivy is.
+
+Also loads kyle.md — the professional context model for working
+with Kyle. Located at {vault_path}/_ivy/kyle.md, loaded explicitly
+at startup (not via vault search, since _ivy/ is excluded from
+search by design).
 """
 
 import logging
@@ -63,6 +68,98 @@ def load_soul_local(agent_name: str = "ivy", agents_dir: str = "agents") -> str:
     )
 
     logger.info(f"Loaded condensed soul for '{agent_name}' ({len(condensed)} chars)")
+    return condensed
+
+
+def load_kyle(vault_path: Path | str) -> str:
+    """Load kyle.md — Kyle's professional context model.
+
+    Located at {vault_path}/_ivy/kyle.md. This file lives in _ivy/
+    (excluded from vault search by design) and is loaded explicitly
+    at startup to be included in the system prompt.
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+
+    Returns:
+        Full contents of kyle.md, or empty string if not found.
+    """
+    kyle_path = Path(vault_path) / "_ivy" / "kyle.md"
+    if not kyle_path.exists():
+        logger.warning("kyle.md not found at %s", kyle_path)
+        return ""
+
+    try:
+        content = kyle_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.error("Failed to read kyle.md: %s", exc)
+        return ""
+
+    logger.info("Loaded kyle.md (%d chars)", len(content))
+    return content
+
+
+def load_kyle_local(vault_path: Path | str) -> str:
+    """Load a condensed version of kyle.md for local models.
+
+    Extracts only the sections a small model needs to work effectively
+    with Kyle without hallucinating on the full context:
+    - Energy Architecture
+    - Weekly Operating Framework
+    - Communication Preferences
+    - What Ivy Should Know About the Relationship (contains Good/Bad/Great)
+
+    Adds the same grounding rule as load_soul_local().
+
+    Args:
+        vault_path: Path to the Obsidian vault root.
+
+    Returns:
+        Condensed kyle.md content, or empty string if not found.
+    """
+    kyle_path = Path(vault_path) / "_ivy" / "kyle.md"
+    if not kyle_path.exists():
+        logger.warning("kyle.md not found at %s", kyle_path)
+        return ""
+
+    try:
+        full_content = kyle_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.error("Failed to read kyle.md: %s", exc)
+        return ""
+
+    sections = _extract_sections(full_content)
+
+    # Sections that give local models enough context without overload.
+    # Headings in kyle.md are numbered ("4. Energy Architecture") so we
+    # match by substring to be resilient to renumbering.
+    keep_substrings = [
+        "Energy Architecture",
+        "Weekly Operating Framework",
+        "Communication Preferences",
+        "What Ivy Should Know About the Relationship",
+    ]
+
+    parts = []
+    for heading, body in sections.items():
+        if any(sub in heading for sub in keep_substrings):
+            parts.append(f"## {heading}\n\n{body}")
+
+    if not parts:
+        logger.warning("kyle.md found but no matching sections extracted")
+        return ""
+
+    condensed = "# Kyle — Working Context\n\n" + "\n\n".join(parts)
+
+    # Same grounding rule as load_soul_local
+    condensed += (
+        "\n\n## IMPORTANT\n\n"
+        "Only reference real information from the conversation. "
+        "Never invent projects, data, metrics, collaborations, or status updates. "
+        "If you don't know something, say so. Keep responses concise and direct."
+    )
+
+    logger.info("Loaded condensed kyle.md (%d chars)", len(condensed))
     return condensed
 
 
