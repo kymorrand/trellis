@@ -18,6 +18,7 @@ tool use. Local models (Ollama) get the simple chat-only path — no tools.
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import shutil
 from dataclasses import dataclass, field
@@ -27,6 +28,7 @@ from typing import TYPE_CHECKING
 
 import anthropic
 
+from trellis.hands.linear_client import LinearClient, format_issues
 from trellis.hands.vault import (
     format_search_results,
     read_vault_file,
@@ -203,6 +205,49 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "name": "linear_read",
+        "description": (
+            "Read issues from the Morrandmore Linear board. Returns current "
+            "issues with their status, priority, project, and assignee. "
+            "Use this to check what's being worked on, what's blocked, "
+            "or what Armando has been building."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max issues to return (default 20)",
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Filter by project name (e.g., 'Trellis'). Optional.",
+                },
+            },
+        },
+    },
+    {
+        "name": "linear_search",
+        "description": (
+            "Search Linear issues by text query. Use to find specific "
+            "tasks, bugs, or features by keyword."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search text — matches against issue titles and descriptions",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 10)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -222,6 +267,14 @@ class ToolExecutor:
         self.agent_state = agent_state
         self.knowledge_manager = knowledge_manager
         self.approval_queue = approval_queue
+        self.linear_client: LinearClient | None = (
+            LinearClient(
+                api_key=os.getenv("IVY_LINEAR_API_KEY_MORRANDMORE", ""),
+                workspace_name="morrandmore",
+            )
+            if os.getenv("IVY_LINEAR_API_KEY_MORRANDMORE")
+            else None
+        )
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool and return the result as a string."""
@@ -302,6 +355,10 @@ class ToolExecutor:
                 return await self._armando_dispatch(tool_input)
             case "journal_read":
                 return self._journal_read(tool_input)
+            case "linear_read":
+                return await self._linear_read(tool_input)
+            case "linear_search":
+                return await self._linear_search(tool_input)
             case _:
                 return f"Unknown tool: {tool_name}"
 
@@ -318,6 +375,8 @@ class ToolExecutor:
                 return "armando_dispatch"
             case "journal_read":
                 return "vault_read"
+            case "linear_read" | "linear_search":
+                return "linear_morrandmore_read"
             case _:
                 return tool_name
 
@@ -433,6 +492,21 @@ class ToolExecutor:
         # Return last N entries
         recent = entries[-limit:] if limit < len(entries) else entries
         return "\n---\n".join(recent) if recent else f"Journal for {date_str} is empty."
+
+    async def _linear_read(self, tool_input: dict) -> str:
+        if not self.linear_client:
+            return "Linear not configured — IVY_LINEAR_API_KEY_MORRANDMORE not set."
+        limit = tool_input.get("limit", 20)
+        issues = await self.linear_client.get_team_issues("MOR", limit=limit)
+        return format_issues(issues)
+
+    async def _linear_search(self, tool_input: dict) -> str:
+        if not self.linear_client:
+            return "Linear not configured."
+        query = tool_input.get("query", "")
+        limit = tool_input.get("limit", 10)
+        issues = await self.linear_client.search_issues(query, limit=limit)
+        return format_issues(issues)
 
 
 # --- Agent Brain ---------------------------------------------------

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-23 — MOR-28: Wire Linear Client into ReAct Loop
+
+Ivy can now read and search the Morrandmore Linear board directly through the ReAct tool loop.
+
+### Linear Tools (MOR-28)
+
+- **`linear_read`** tool — Read issues from the MOR team board with optional limit parameter. Calls `LinearClient.get_team_issues()` and formats output via `format_issues()`.
+- **`linear_search`** tool — Search Linear issues by text query. Calls `LinearClient.search_issues()` with configurable limit.
+- **Permission mapping** — Both tools route to `linear_morrandmore_read` (ALLOW level in permissions table).
+- **Graceful degradation** — Returns a helpful message when `IVY_LINEAR_API_KEY_MORRANDMORE` is not set. No crashes, no stack traces.
+- **`ToolExecutor.linear_client`** — Initialized from env var at construction time. `None` when key is absent.
+
+### Testing
+
+- **`tests/test_linear_client.py`** — 12 new tests covering: tool definitions present in `TOOL_DEFINITIONS`, permission key mapping, `_linear_read` handler with mocked client (formatted output, default limit, no-client graceful failure), `_linear_search` handler with mocked client (formatted output, default limit, no-client graceful failure).
+
+---
+
 ## 2026-03-23 — Fix claude CLI PATH for armando_dispatch under systemd
 
 When Ivy runs under systemd, `armando_dispatch` failed with `claude: not found` because systemd's minimal PATH doesn't include `~/.local/bin/`.
