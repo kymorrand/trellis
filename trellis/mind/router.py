@@ -1,14 +1,19 @@
 """
 trellis.mind.router — Model Routing
 
-Routes inference requests to local (Ollama) or cloud (Anthropic) models
-based on task complexity, user overrides, and budget.
+Routes inference requests to local (Ollama), light cloud (Haiku), or
+full cloud (Sonnet) based on task complexity, user overrides, and budget.
 
-Routing logic:
-    /local prefix   → Force local (Ollama qwen3:14b)
-    /claude prefix  → Force cloud (Claude Sonnet via Anthropic)
-    Simple messages  → Local (under 50 words, greetings, quick questions)
-    Complex messages → Cloud (long questions, reasoning, writing, analysis)
+Three-tier routing:
+    /local prefix    → Force local (Ollama qwen3:14b)
+    /claude prefix   → Force cloud (Claude Sonnet via Anthropic)
+    Simple messages  → Local (greetings, short questions, casual chat)
+    Medium messages  → Light cloud (Haiku — conversational, moderate complexity)
+    Complex messages → Full cloud (Sonnet — reasoning, analysis, long-form writing)
+
+Prompt caching:
+    System prompts are sent with cache_control to get 90% input cost
+    savings on repeated calls. The Anthropic API caches prompts for 5 min.
 """
 
 import logging
@@ -20,20 +25,45 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# ─── Models ───────────────────────────────────────────────
+
 CLOUD_MODEL = "claude-sonnet-4-20250514"
+LIGHT_MODEL = "claude-haiku-4-5-20251001"
 LOCAL_MODEL = "qwen3:14b"
+
 LOCAL_INDICATOR = "\U0001f33f"  # 🌿
-CLOUD_INDICATOR = "\u2601\ufe0f"  # ☁️
+LIGHT_INDICATOR = "\u2601\ufe0f"  # ☁️ (light cloud — same icon, cheaper)
+CLOUD_INDICATOR = "\u2601\ufe0f\U0001f4ab"  # ☁️💫 (full cloud)
 
-# Cost estimates for Claude Sonnet (per 1M tokens)
-COST_INPUT_PER_M = 3.00
-COST_OUTPUT_PER_M = 15.00
+# ─── Cost estimates (per 1M tokens) ───────────────────────
 
-# Keywords that signal complexity
-COMPLEX_KEYWORDS = re.compile(
-    r"\b(draft|write|analyze|analysis|strategy|strategize|explain|compare|review|"
-    r"summarize|plan|design|architect|refactor|debug|research|evaluate|assess|"
-    r"critique|outline|brainstorm|pros\s+and\s+cons)\b",
+COSTS = {
+    CLOUD_MODEL: {"input": 3.00, "output": 15.00, "cache_read": 0.30},
+    LIGHT_MODEL: {"input": 0.80, "output": 4.00, "cache_read": 0.08},
+}
+
+# ─── Routing heuristics ──────────────────────────────────
+
+# Keywords that demand Sonnet-level reasoning
+SONNET_KEYWORDS = re.compile(
+    r"\b(architect|refactor|debug|strategy|strategize|"
+    r"pros\s+and\s+cons|trade.?offs?|compare\s+and\s+contrast|"
+    r"code\s+review|security\s+audit|design\s+system)\b",
+    re.IGNORECASE,
+)
+
+# Keywords that are fine for Haiku (conversational complexity)
+HAIKU_KEYWORDS = re.compile(
+    r"\b(draft|write|explain|summarize|plan|outline|brainstorm|"
+    r"analyze|analysis|review|evaluate|assess|critique|research|describe)\b",
+    re.IGNORECASE,
+)
+
+# Signals that a message is simple enough for local
+LOCAL_SIGNALS = re.compile(
+    r"^(hey|hi|hello|thanks|thank you|ok|okay|sure|yes|no|yeah|yep|nah|"
+    r"good morning|good night|gm|gn|sounds good|got it|nice|cool|"
+    r"how are you|what's up|sup|yo)\s*[.!?]?$",
     re.IGNORECASE,
 )
 
@@ -51,16 +81,16 @@ class RouteResult:
 
 @dataclass
 class ModelRouter:
-    """Routes messages to local or cloud models."""
+    """Routes messages to local, light cloud, or full cloud models."""
 
     anthropic_client: anthropic.Anthropic
     ollama_url: str = "http://localhost:11434"
     _session_cost: float = field(default=0.0, init=False)
 
     def classify(self, message: str) -> str:
-        """Classify a message as 'local' or 'cloud'.
+        """Classify a message into a routing tier.
 
-        Returns 'force_local', 'force_cloud', 'local', or 'cloud'.
+        Returns: 'force_local', 'force_cloud', 'local', 'light', or 'cloud'.
         """
         stripped = message.strip()
 
@@ -70,22 +100,33 @@ class ModelRouter:
         if stripped.lower().startswith("/claude"):
             return "force_cloud"
 
-        # Complexity heuristics
         word_count = len(stripped.split())
 
-        # Complex keywords → cloud
-        if COMPLEX_KEYWORDS.search(stripped):
+        # Greeting patterns → always local (even if they contain keywords)
+        if LOCAL_SIGNALS.match(stripped):
+            return "local"
+
+        # Sonnet-level keywords → full cloud (check before word count)
+        if SONNET_KEYWORDS.search(stripped):
             return "cloud"
 
-        # Long messages → cloud
-        if word_count > 50:
+        # Haiku-level keywords → light cloud (check before word count)
+        if HAIKU_KEYWORDS.search(stripped):
+            return "light"
+
+        # Very long or multi-paragraph → full cloud
+        if word_count > 100 or stripped.count("\n\n") >= 3:
             return "cloud"
 
-        # Multi-paragraph → cloud
-        if stripped.count("\n\n") >= 2:
-            return "cloud"
+        # Moderate length → Haiku
+        if word_count > 30:
+            return "light"
 
-        # Everything else → local
+        # Multi-paragraph but short → Haiku
+        if stripped.count("\n\n") >= 1:
+            return "light"
+
+        # Default: local for short, simple messages
         return "local"
 
     def strip_prefix(self, message: str) -> str:
@@ -105,18 +146,7 @@ class ModelRouter:
         classify_from: str | None = None,
         local_system_prompt: str | None = None,
     ) -> RouteResult:
-        """Route a message to the appropriate model and return the response.
-
-        Args:
-            message: The full message to send to the model.
-            system_prompt: System prompt for cloud models.
-            history: Conversation history.
-            classify_from: If provided, use this string (instead of message)
-                for routing classification. Useful when `message` has been
-                enriched with vault context.
-            local_system_prompt: Condensed system prompt for local models.
-                Falls back to system_prompt if not provided.
-        """
+        """Route a message to the appropriate model and return the response."""
         route = self.classify(classify_from or message)
         clean_message = self.strip_prefix(message)
         is_local = route in ("local", "force_local")
@@ -133,13 +163,24 @@ class ModelRouter:
                     indicator=LOCAL_INDICATOR,
                 )
             except Exception as e:
-                # If forced local, don't fall back
                 if route == "force_local":
                     raise
-                logger.warning(f"Local model failed, falling back to cloud: {e}")
-                # Fall through to cloud
+                logger.warning(f"Local model failed, falling back to light cloud: {e}")
+                # Fall through to light cloud
 
-        return await self._call_cloud(clean_message, system_prompt, history)
+        # Light cloud (Haiku) for medium complexity
+        if route in ("local", "light"):
+            try:
+                return await self._call_cloud(
+                    clean_message, system_prompt, history, model=LIGHT_MODEL
+                )
+            except Exception as e:
+                logger.warning(f"Haiku failed, falling back to Sonnet: {e}")
+
+        # Full cloud (Sonnet) for complex tasks or as final fallback
+        return await self._call_cloud(
+            clean_message, system_prompt, history, model=CLOUD_MODEL
+        )
 
     async def _call_ollama(
         self,
@@ -177,41 +218,70 @@ class ModelRouter:
         message: str,
         system_prompt: str,
         history: list[dict],
+        model: str = CLOUD_MODEL,
     ) -> RouteResult:
-        """Call Claude via Anthropic API."""
+        """Call Claude via Anthropic API with prompt caching."""
         messages = list(history)
         messages.append({"role": "user", "content": message})
 
+        # Use prompt caching on the system prompt — this is the big win.
+        # The system prompt (SOUL.md + role context) is ~2K tokens and
+        # identical across calls. Cache read costs 10% of input price.
+        system_with_cache = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+
+        costs = COSTS.get(model, COSTS[CLOUD_MODEL])
+        indicator = LIGHT_INDICATOR if model == LIGHT_MODEL else CLOUD_INDICATOR
+
         response = self.anthropic_client.messages.create(
-            model=CLOUD_MODEL,
+            model=model,
             max_tokens=1024,
-            system=system_prompt,
+            system=system_with_cache,
             messages=messages,
         )
 
         if not response.content:
-            raise ValueError("Empty response from Claude API")
+            raise ValueError(f"Empty response from {model}")
         assistant_reply = response.content[0].text
 
-        # Calculate cost
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-        cost = (input_tokens / 1_000_000 * COST_INPUT_PER_M) + (
-            output_tokens / 1_000_000 * COST_OUTPUT_PER_M
+        # Calculate cost with cache awareness
+        usage = response.usage
+        input_tokens = usage.input_tokens
+        output_tokens = usage.output_tokens
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+        # Non-cached input tokens = total - cache_read - cache_creation
+        regular_input = input_tokens - cache_read
+        cost = (
+            (regular_input / 1_000_000 * costs["input"])
+            + (cache_read / 1_000_000 * costs["cache_read"])
+            + (cache_creation / 1_000_000 * costs["input"] * 1.25)  # cache write = 125% of input
+            + (output_tokens / 1_000_000 * costs["output"])
         )
         self._session_cost += cost
 
+        cache_info = ""
+        if cache_read > 0:
+            savings = cache_read / 1_000_000 * (costs["input"] - costs["cache_read"])
+            cache_info = f", cache saved ${savings:.4f}"
+
         logger.info(
-            f"Claude ({CLOUD_MODEL}) responded ({len(assistant_reply)} chars, "
-            f"${cost:.4f}, session total: ${self._session_cost:.4f})"
+            f"{model} responded ({len(assistant_reply)} chars, "
+            f"${cost:.4f}{cache_info}, session: ${self._session_cost:.4f})"
         )
 
         return RouteResult(
             response=assistant_reply,
-            model_used=CLOUD_MODEL,
+            model_used=model,
             is_local=False,
             cost_usd=cost,
-            indicator=CLOUD_INDICATOR,
+            indicator=indicator,
         )
 
     @property

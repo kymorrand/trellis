@@ -229,7 +229,7 @@ class IvyDiscordBot(discord.Client):
         if content.lower() == "!clear":
             self.conversations[message.channel.id] = []
             self._save_conversations()
-            await message.reply("Conversation cleared. Fresh start.")
+            await message.channel.send("Conversation cleared. Fresh start.")
             log_entry(self.vault_path, "COMMAND", f"Cleared history in #{message.channel.name}")
             return
 
@@ -240,7 +240,7 @@ class IvyDiscordBot(discord.Client):
                     report = await self.heartbeat.get_status_report()
                 else:
                     report = "🌱 Heartbeat not running — status unavailable."
-            await message.reply(report)
+            await message.channel.send(report)
             log_entry(self.vault_path, "COMMAND", "Status report requested")
             return
 
@@ -251,7 +251,7 @@ class IvyDiscordBot(discord.Client):
             async with message.channel.typing():
                 reply = await self._handle_vault_save(message.channel.id, content)
             for chunk in _split_message(reply):
-                await message.reply(chunk)
+                await message.channel.send(chunk)
             log_entry(self.vault_path, "VAULT_SAVE", "Save request from Kyle", content)
             if self.agent_state:
                 self.agent_state.set("idle")
@@ -299,7 +299,7 @@ class IvyDiscordBot(discord.Client):
 
         # Discord has a 2000 char limit — split if needed
         for chunk in _split_message(reply_with_indicator):
-            await message.reply(chunk)
+            await message.channel.send(chunk)
 
         # Journal: log Ivy's response
         cost_note = f" (${result.cost_usd:.4f})" if result.cost_usd > 0 else ""

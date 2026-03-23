@@ -1,12 +1,12 @@
-"""Tests for trellis.mind.router — Model routing classification."""
+"""Tests for trellis.mind.router — Three-tier model routing classification."""
 
 import pytest
 
-from trellis.mind.router import ModelRouter, COMPLEX_KEYWORDS
+from trellis.mind.router import ModelRouter, SONNET_KEYWORDS, HAIKU_KEYWORDS
 
 
 class TestClassify:
-    """Test the classify() routing heuristics."""
+    """Test the classify() three-tier routing heuristics."""
 
     @pytest.fixture
     def router(self):
@@ -47,26 +47,57 @@ class TestClassify:
     def test_empty_string(self, router):
         assert router.classify("") == "local"
 
-    # --- Complex messages → cloud ---
+    def test_short_casual(self, router):
+        assert router.classify("sounds good") == "local"
+
+    def test_greeting_yo(self, router):
+        assert router.classify("yo") == "local"
+
+    # --- Medium complexity → light (Haiku) ---
 
     def test_draft_keyword(self, router):
-        assert router.classify("draft a blog post about AI") == "cloud"
+        assert router.classify("draft a blog post about AI") == "light"
 
     def test_analyze_keyword(self, router):
-        assert router.classify("analyze this data") == "cloud"
+        assert router.classify("analyze this data") == "light"
 
     def test_write_keyword(self, router):
-        assert router.classify("write a summary of the meeting") == "cloud"
+        assert router.classify("write a summary of the meeting") == "light"
+
+    def test_explain_keyword(self, router):
+        assert router.classify("explain how the heartbeat works") == "light"
+
+    def test_summarize_keyword(self, router):
+        assert router.classify("summarize what happened yesterday") == "light"
+
+    def test_moderate_length(self, router):
+        msg = " ".join(["word"] * 35)
+        assert router.classify(msg) == "light"
+
+    def test_single_paragraph_break(self, router):
+        msg = "first part of the question\n\nsecond part here"
+        assert router.classify(msg) == "light"
+
+    # --- Complex messages → cloud (Sonnet) ---
+
+    def test_architect_keyword(self, router):
+        assert router.classify("help me architect a new module") == "cloud"
+
+    def test_debug_keyword(self, router):
+        assert router.classify("debug this error in the router") == "cloud"
 
     def test_strategy_keyword(self, router):
         assert router.classify("what's our strategy for Q3?") == "cloud"
 
-    def test_long_message(self, router):
-        msg = " ".join(["word"] * 51)
+    def test_tradeoffs_keyword(self, router):
+        assert router.classify("what are the trade-offs here?") == "cloud"
+
+    def test_very_long_message(self, router):
+        msg = " ".join(["word"] * 101)
         assert router.classify(msg) == "cloud"
 
-    def test_multi_paragraph(self, router):
-        msg = "paragraph one\n\nparagraph two\n\nparagraph three"
+    def test_many_paragraphs(self, router):
+        msg = "p1\n\np2\n\np3\n\np4"
         assert router.classify(msg) == "cloud"
 
     # --- Edge cases ---
@@ -75,9 +106,17 @@ class TestClassify:
         # "draft" should match, but "undrafted" should not (word boundary)
         assert router.classify("undrafted") == "local"
 
-    def test_exactly_50_words_is_local(self, router):
-        msg = " ".join(["word"] * 50)
+    def test_exactly_30_words_is_local(self, router):
+        msg = " ".join(["word"] * 30)
         assert router.classify(msg) == "local"
+
+    def test_31_words_is_light(self, router):
+        msg = " ".join(["word"] * 31)
+        assert router.classify(msg) == "light"
+
+    def test_100_words_is_light(self, router):
+        msg = " ".join(["word"] * 100)
+        assert router.classify(msg) == "light"
 
 
 class TestStripPrefix:

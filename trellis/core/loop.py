@@ -38,8 +38,7 @@ from trellis.mind.context import auto_context
 from trellis.mind.router import (
     CLOUD_INDICATOR,
     CLOUD_MODEL,
-    COST_INPUT_PER_M,
-    COST_OUTPUT_PER_M,
+    COSTS,
     LOCAL_INDICATOR,
     ModelRouter,
     RouteResult,
@@ -436,7 +435,18 @@ class AgentBrain:
                     raise
                 logger.warning("Local model failed, falling through to cloud with tools")
 
-        # Cloud model: full ReAct loop with tool calling
+        # Light cloud (Haiku): chat without tools — fast and cheap
+        if route == "light":
+            if self.agent_state:
+                self.agent_state.set("thinking", "processing message")
+            return await self.router.route(
+                message=effective_message,
+                system_prompt=self._build_system_prompt(),
+                history=compacted_history,
+                classify_from=classify_from,
+            )
+
+        # Full cloud (Sonnet): ReAct loop with tool calling
         if self.agent_state:
             self.agent_state.set("thinking", "processing message")
 
@@ -457,20 +467,37 @@ class AgentBrain:
         while rounds < MAX_TOOL_ROUNDS:
             rounds += 1
 
-            # Call Claude with tools
+            # Call Claude with tools + prompt caching
+            system_with_cache = [
+                {
+                    "type": "text",
+                    "text": self._build_system_prompt(),
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
             response = self.anthropic_client.messages.create(
                 model=CLOUD_MODEL,
                 max_tokens=2048,
-                system=self._build_system_prompt(),
+                system=system_with_cache,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
             )
 
-            # Calculate cost
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
-            cost = (input_tokens / 1_000_000 * COST_INPUT_PER_M) + (
-                output_tokens / 1_000_000 * COST_OUTPUT_PER_M
+            # Calculate cost with cache awareness
+            usage = response.usage
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+            cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+            costs = COSTS[CLOUD_MODEL]
+            regular_input = input_tokens - cache_read
+            cost = (
+                (regular_input / 1_000_000 * costs["input"])
+                + (cache_read / 1_000_000 * costs["cache_read"])
+                + (cache_creation / 1_000_000 * costs["input"] * 1.25)
+                + (output_tokens / 1_000_000 * costs["output"])
             )
             total_cost += cost
             self.router._session_cost += cost

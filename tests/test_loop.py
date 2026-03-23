@@ -14,6 +14,17 @@ from trellis.core.loop import (
     ToolExecutor,
     AgentBrain,
 )
+
+
+def _mock_usage(input_tokens=100, output_tokens=50):
+    """Create a mock usage object with cache fields."""
+    usage = MagicMock()
+    usage.input_tokens = input_tokens
+    usage.output_tokens = output_tokens
+    usage.cache_read_input_tokens = 0
+    usage.cache_creation_input_tokens = 0
+    return usage
+
 from trellis.security.permissions import Permission
 
 
@@ -275,12 +286,11 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_text_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         mock_anthropic.messages.create.return_value = mock_response
 
-        event = Event(source="cli", content="analyze something complex")
+        event = Event(source="cli", content="architect something complex")
         result = await brain.process(event, [])
 
         assert result.response == "Hello from Claude!"
@@ -299,8 +309,7 @@ class TestAgentBrain:
 
         mock_response_1 = MagicMock()
         mock_response_1.content = [mock_tool_block]
-        mock_response_1.usage.input_tokens = 100
-        mock_response_1.usage.output_tokens = 50
+        mock_response_1.usage = _mock_usage(100, 50)
 
         # Second response: text
         mock_text_block = MagicMock()
@@ -309,8 +318,7 @@ class TestAgentBrain:
 
         mock_response_2 = MagicMock()
         mock_response_2.content = [mock_text_block]
-        mock_response_2.usage.input_tokens = 200
-        mock_response_2.usage.output_tokens = 80
+        mock_response_2.usage = _mock_usage(200, 80)
 
         mock_anthropic.messages.create.side_effect = [mock_response_1, mock_response_2]
 
@@ -331,13 +339,12 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_tool_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         # Always return tool_use — never text
         mock_anthropic.messages.create.return_value = mock_response
 
-        event = Event(source="cli", content="do something complex")
+        event = Event(source="cli", content="architect something complex")
         result = await brain.process(event, [])
 
         assert "stop here" in result.response.lower() or "need to stop" in result.response.lower()
@@ -356,8 +363,7 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_text_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         mock_anthropic.messages.create.return_value = mock_response
 
