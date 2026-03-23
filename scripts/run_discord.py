@@ -2,7 +2,7 @@
 Entry point for Ivy — Discord bot, web server, and heartbeat scheduler.
 Run from the trellis repo root: python scripts/run_discord.py
 
-All three run as concurrent async tasks in a single process,
+All four run as concurrent async tasks in a single process,
 sharing agent state, approval queue, and heartbeat data.
 """
 
@@ -24,6 +24,7 @@ from trellis.core.heartbeat import HeartbeatScheduler
 from trellis.core.queue import ApprovalQueue
 from trellis.memory.knowledge import KnowledgeManager
 from trellis.senses.discord_channel import create_bot
+from trellis.senses.file_watcher import FileWatcher
 from trellis.senses.web import create_app
 
 logging.basicConfig(
@@ -58,7 +59,7 @@ async def _index_vault_background(knowledge_manager: KnowledgeManager) -> None:
 
 
 async def run_all(config: dict):
-    """Run Discord bot, web server, and heartbeat as concurrent async tasks."""
+    """Run Discord bot, web server, heartbeat, and file watcher as concurrent async tasks."""
     # Shared state objects
     agent_state = AgentState()
     approval_queue = ApprovalQueue(vault_path=config["vault_path"])
@@ -74,6 +75,7 @@ async def run_all(config: dict):
     bot = create_bot(config)
     bot.set_agent_state(agent_state)
     bot.set_knowledge_manager(knowledge_manager)
+    bot.set_approval_queue(approval_queue)
 
     # Heartbeat scheduler
     heartbeat = HeartbeatScheduler(
@@ -84,12 +86,16 @@ async def run_all(config: dict):
     )
     bot.set_heartbeat(heartbeat)
 
+    # File watcher — monitors _ivy/inbox/ for new files
+    file_watcher = FileWatcher(vault_path=config["vault_path"])
+
     # Web server
     web_app = create_app(
         heartbeat=heartbeat,
         agent_state=agent_state,
         queue=approval_queue,
         config=config,
+        knowledge_manager=knowledge_manager,
     )
     uvicorn_config = uvicorn.Config(
         web_app,
@@ -115,21 +121,28 @@ async def run_all(config: dict):
     async with bot:
         heartbeat_task = asyncio.create_task(heartbeat.start())
         web_task = asyncio.create_task(web_server.serve())
+        watcher_task = asyncio.create_task(file_watcher.start())
 
         # Background vault indexing — non-blocking
         index_task = asyncio.create_task(_index_vault_background(knowledge_manager))
 
-        logger.info("All systems online — Discord + Web (:8420) + Heartbeat")
+        logger.info("All systems online — Discord + Web (:8420) + Heartbeat + FileWatcher")
         try:
             await bot.start(config["discord_token"])
         finally:
             # Graceful shutdown
             await heartbeat.stop()
+            await file_watcher.stop()
             heartbeat_task.cancel()
+            watcher_task.cancel()
             index_task.cancel()
             web_server.should_exit = True
             try:
                 await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await watcher_task
             except asyncio.CancelledError:
                 pass
             try:
@@ -164,7 +177,7 @@ def main():
     except Exception as e:
         logger.warning(f"Ollama: not reachable at {ollama_url} — local routing will fall back to cloud ({e})")
 
-    logger.info("Starting Ivy — Discord + Web + Heartbeat...")
+    logger.info("Starting Ivy — Discord + Web + Heartbeat + FileWatcher...")
     asyncio.run(run_all(config))
 
 

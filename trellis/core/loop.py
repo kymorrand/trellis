@@ -6,10 +6,10 @@ file watcher, heartbeat), assembles context, calls the model with tool
 definitions, executes tool calls, and returns the final response.
 
 Architecture:
-    LISTEN  → Receive event from any input channel
-    THINK   → Assemble context, call model with tools
-    ACT     → Execute tool calls, send results back to model
-    PERSIST → Log to journal, update state, save conversations
+    LISTEN  -> Receive event from any input channel
+    THINK   -> Assemble context, call model with tools
+    ACT     -> Execute tool calls, send results back to model
+    PERSIST -> Log to journal, update state, save conversations
 
 The loop supports multi-step tool calling via the Anthropic API's native
 tool use. Local models (Ollama) get the simple chat-only path — no tools.
@@ -47,6 +47,7 @@ from trellis.security.permissions import Permission, check_permission
 
 if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
+    from trellis.core.queue import ApprovalQueue
     from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 8
 
 
-# ─── Event ────────────────────────────────────────────────
+# --- Event ---------------------------------------------------------
 
 @dataclass
 class Event:
@@ -69,7 +70,7 @@ class Event:
     metadata: dict = field(default_factory=dict)
 
 
-# ─── Tool Definitions (Anthropic format) ──────────────────
+# --- Tool Definitions (Anthropic format) ---------------------------
 
 TOOL_DEFINITIONS = [
     {
@@ -179,7 +180,7 @@ TOOL_DEFINITIONS = [
 ]
 
 
-# ─── Tool Executor ────────────────────────────────────────
+# --- Tool Executor -------------------------------------------------
 
 class ToolExecutor:
     """Executes tools with permission checks and audit logging."""
@@ -189,10 +190,12 @@ class ToolExecutor:
         vault_path: Path,
         agent_state: AgentState | None = None,
         knowledge_manager: KnowledgeManager | None = None,
+        approval_queue: ApprovalQueue | None = None,
     ):
         self.vault_path = vault_path
         self.agent_state = agent_state
         self.knowledge_manager = knowledge_manager
+        self.approval_queue = approval_queue
 
     async def execute(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool and return the result as a string."""
@@ -204,12 +207,7 @@ class ToolExecutor:
             return f"Permission denied: {tool_name} is not allowed."
 
         if perm == Permission.ASK:
-            # For now, deny ASK-level actions in autonomous mode.
-            # In the future, this will queue an approval request.
-            return (
-                f"This action ({tool_name}) requires Kyle's approval. "
-                f"I've noted it but cannot execute autonomously."
-            )
+            return self._queue_approval(tool_name, tool_input)
 
         # Update agent state
         if self.agent_state:
@@ -231,6 +229,35 @@ class ToolExecutor:
         )
 
         return result
+
+    def _queue_approval(self, tool_name: str, tool_input: dict) -> str:
+        """Queue an ASK-level action for Kyle's approval."""
+        input_summary = str(tool_input)[:200]
+
+        if self.approval_queue is not None:
+            summary = f"{tool_name}: {input_summary[:60]}"
+            body = (
+                f"**Tool:** `{tool_name}`\n"
+                f"**Input:** `{input_summary}`\n\n"
+                f"Ivy attempted this action but it requires approval."
+            )
+            item_id = self.approval_queue.add_item(
+                item_type="tool_approval",
+                summary=summary,
+                body=body,
+                context=f"Tool: {tool_name}",
+                source="ivy",
+            )
+            return (
+                f"This action ({tool_name}) requires Kyle's approval. "
+                f"I've added it to the queue (#{item_id})."
+            )
+
+        # No queue available — soft deny
+        return (
+            f"This action ({tool_name}) requires Kyle's approval. "
+            f"I've noted it but cannot execute autonomously."
+        )
 
     async def _run(self, tool_name: str, tool_input: dict) -> str:
         """Dispatch to the appropriate tool handler."""
@@ -344,7 +371,7 @@ class ToolExecutor:
         return "\n---\n".join(recent) if recent else f"Journal for {date_str} is empty."
 
 
-# ─── Agent Brain ──────────────────────────────────────────
+# --- Agent Brain ---------------------------------------------------
 
 class AgentBrain:
     """The ReAct loop — Ivy's thinking engine.
@@ -363,6 +390,7 @@ class AgentBrain:
         agent_state: AgentState | None = None,
         role_name: str = "_default",
         knowledge_manager: KnowledgeManager | None = None,
+        approval_queue: ApprovalQueue | None = None,
     ):
         self.anthropic_client = anthropic_client
         self.router = router
@@ -371,8 +399,12 @@ class AgentBrain:
         self.local_system_prompt = local_system_prompt or system_prompt
         self.agent_state = agent_state
         self.knowledge_manager = knowledge_manager
+        self.approval_queue = approval_queue
         self.tool_executor = ToolExecutor(
-            vault_path, agent_state, knowledge_manager=knowledge_manager
+            vault_path,
+            agent_state,
+            knowledge_manager=knowledge_manager,
+            approval_queue=approval_queue,
         )
         self.set_role(role_name)
 

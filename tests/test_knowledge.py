@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,11 +32,13 @@ def vault(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (knowledge_dir / "project-plan.md").write_text(
-        "# Project Plan\n\nQ1 goals and milestones for Trellis development.\n",
+        "# Project Plan\n\nQ1 goals and milestones for Trellis development.\n"
+        "See also [[market-research]] for competitive context.\n",
         encoding="utf-8",
     )
     (tmp_path / "daily-notes.md").write_text(
-        "# Daily Notes\n\nMet with Kyle about strategy.\n",
+        "# Daily Notes\n\nMet with Kyle about strategy.\n"
+        "Referenced [[project-plan|the plan]] during meeting.\n",
         encoding="utf-8",
     )
 
@@ -156,6 +160,15 @@ class TestIndexVault:
         assert stats["indexed"] == 0
         assert stats["skipped"] == 3
 
+    @pytest.mark.asyncio
+    async def test_index_vault_sets_last_indexed(self, vault: Path) -> None:
+        """index_vault sets _last_indexed_at timestamp."""
+        km = KnowledgeManager(vault)
+        assert km._last_indexed_at is None
+        with patch("trellis.memory.knowledge.generate_embedding", new=_mock_embedding_single()):
+            await km.index_vault()
+        assert km._last_indexed_at is not None
+
 
 class TestSearch:
     """Tests for hybrid search."""
@@ -216,3 +229,91 @@ class TestSearch:
         with patch("trellis.memory.knowledge.generate_embedding", new=_mock_embedding_down()):
             results = await km.search("")
         assert results == []
+
+
+class TestVaultHealth:
+    """Tests for vault_health() method."""
+
+    @pytest.mark.asyncio
+    async def test_basic_stats(self, vault: Path) -> None:
+        """vault_health returns correct total and indexed counts."""
+        km = KnowledgeManager(vault)
+        with patch("trellis.memory.knowledge.generate_embedding", new=_mock_embedding_single()):
+            await km.index_vault()
+            health = await km.vault_health()
+
+        assert health["total_files"] == 3
+        assert health["indexed_files"] == 3
+        assert health["index_coverage_pct"] == 100.0
+        assert health["last_indexed"] is not None
+
+    @pytest.mark.asyncio
+    async def test_empty_vault(self, tmp_path: Path) -> None:
+        """vault_health on empty/missing vault returns zeros."""
+        km = KnowledgeManager(tmp_path / "nonexistent")
+        health = await km.vault_health()
+        assert health["total_files"] == 0
+        assert health["indexed_files"] == 0
+        assert health["stale_files"] == 0
+        assert health["orphan_files"] == 0
+        assert health["last_indexed"] is None
+        assert health["index_coverage_pct"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_stale_files_detected(self, vault: Path) -> None:
+        """Files not modified in 90+ days and under 200 bytes are stale."""
+        # Create a small, old file
+        stale_file = vault / "knowledge" / "tiny-stub.md"
+        stale_file.write_text("# Stub\n", encoding="utf-8")
+        # Set mtime to 100 days ago
+        old_time = time.time() - (100 * 86400)
+        os.utime(stale_file, (old_time, old_time))
+
+        km = KnowledgeManager(vault)
+        health = await km.vault_health()
+        assert health["stale_files"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_large_old_file_not_stale(self, vault: Path) -> None:
+        """Old files over 200 bytes are NOT stale (they have real content)."""
+        big_old = vault / "knowledge" / "big-old.md"
+        big_old.write_text("# Big\n" + "Content. " * 50, encoding="utf-8")
+        old_time = time.time() - (100 * 86400)
+        os.utime(big_old, (old_time, old_time))
+
+        km = KnowledgeManager(vault)
+        health = await km.vault_health()
+        # This file should NOT be stale (over 200 bytes)
+        # Only tiny-stub type files would be stale
+        assert health["stale_files"] == 0
+
+    @pytest.mark.asyncio
+    async def test_orphan_files_detected(self, vault: Path) -> None:
+        """Files with no inbound [[wikilinks]] are orphans."""
+        km = KnowledgeManager(vault)
+        health = await km.vault_health()
+        # daily-notes.md has no inbound links (nothing links TO it)
+        # market-research.md is linked from project-plan.md ([[market-research]])
+        # project-plan.md is linked from daily-notes.md ([[project-plan]])
+        assert health["orphan_files"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_non_orphan_not_counted(self, vault: Path) -> None:
+        """Files that ARE linked to are not orphans."""
+        km = KnowledgeManager(vault)
+        health = await km.vault_health()
+        # market-research and project-plan are both linked — at most 1 orphan (daily-notes)
+        assert health["orphan_files"] == 1
+
+    @pytest.mark.asyncio
+    async def test_coverage_partial(self, vault: Path) -> None:
+        """Coverage is correct when not all files are indexed."""
+        km = KnowledgeManager(vault)
+        # Only index one file
+        with patch("trellis.memory.knowledge.generate_embedding", new=_mock_embedding_single()):
+            await km.index_file(vault / "knowledge" / "market-research.md")
+
+        health = await km.vault_health()
+        assert health["total_files"] == 3
+        assert health["indexed_files"] == 1
+        assert 30.0 < health["index_coverage_pct"] < 40.0  # ~33.3%

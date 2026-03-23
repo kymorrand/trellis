@@ -12,19 +12,19 @@ Schedule:
     Every 30 min  — Check inbox for new items (silent)
     Every 6 hours — Reindex vault for semantic search (silent)
     Midnight      — Nightly backup, journal rollover, cost report (silent)
-    8:00 AM       — Morning brief (→ Discord)
-    6:00 PM       — End of day summary (→ Discord)
+    8:00 AM       — Morning brief (-> Discord)
+    6:00 PM       — End of day summary (-> Discord)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from trellis.hands.github_client import vault_backup
 from trellis.memory.journal import log_entry
 
 if TYPE_CHECKING:
@@ -132,7 +132,7 @@ class HeartbeatScheduler:
         except Exception as e:
             logger.error(f"Heartbeat task '{name}' failed: {e}", exc_info=True)
 
-    # ─── Silent background tasks ─────────────────────────────────────
+    # --- Silent background tasks -----------------------------------------
 
     async def _check_inbox(self, now: datetime):
         """Check _ivy/inbox/ directories for new files."""
@@ -183,50 +183,17 @@ class HeartbeatScheduler:
         await self._cost_report(now)
 
     async def _nightly_backup(self):
-        """Git add/commit/push the vault."""
-        vault = str(self.vault_path)
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        """Git add/commit/push the vault via async github_client."""
         try:
-            # Stage all changes
-            subprocess.run(
-                ["git", "-C", vault, "add", "-A"],
-                capture_output=True, text=True, timeout=30, check=True,
-            )
-            # Commit (may fail if nothing to commit — that's fine)
-            commit_result = subprocess.run(
-                ["git", "-C", vault, "commit", "-m", f"Nightly backup {date_str}"],
-                capture_output=True, text=True, timeout=30,
-            )
-            if commit_result.returncode != 0 and "nothing to commit" in commit_result.stdout:
-                log_entry(self.vault_path, "HEARTBEAT_BACKUP", "Nightly backup: nothing to commit")
-                logger.info("Nightly backup: nothing to commit")
-                return
+            result = await vault_backup(self.vault_path)
+            log_entry(self.vault_path, "HEARTBEAT_BACKUP", result)
+            logger.info(f"Nightly backup: {result}")
 
-            # Push
-            push_result = subprocess.run(
-                ["git", "-C", vault, "push"],
-                capture_output=True, text=True, timeout=60,
-            )
-            if push_result.returncode != 0:
-                error_msg = f"Nightly backup push failed: {push_result.stderr}"
-                log_entry(self.vault_path, "HEARTBEAT_BACKUP_FAIL", error_msg)
-                logger.error(error_msg)
-                # Critical alert — post to Discord
+            # Alert Discord on failures
+            if "failed" in result.lower() or "BLOCKED" in result:
                 if self._discord_post:
-                    await self._discord_post(
-                        f"🚨 **Nightly backup push failed**\n```\n{push_result.stderr[:500]}\n```"
-                    )
-                return
+                    await self._discord_post(f"🚨 **{result}**")
 
-            log_entry(self.vault_path, "HEARTBEAT_BACKUP", f"Nightly backup completed: {date_str}")
-            logger.info("Nightly backup completed successfully")
-
-        except subprocess.TimeoutExpired:
-            error_msg = "Nightly backup timed out"
-            log_entry(self.vault_path, "HEARTBEAT_BACKUP_FAIL", error_msg)
-            logger.error(error_msg)
-            if self._discord_post:
-                await self._discord_post(f"🚨 **{error_msg}**")
         except Exception as e:
             error_msg = f"Nightly backup error: {e}"
             log_entry(self.vault_path, "HEARTBEAT_BACKUP_FAIL", error_msg)
@@ -300,7 +267,7 @@ class HeartbeatScheduler:
             total += stats["cost_usd"]
         return total
 
-    # ─── Scheduled briefs (post to Discord) ──────────────────────────
+    # --- Scheduled briefs (post to Discord) --------------------------------
 
     async def _morning_brief(self, now: datetime):
         """8:00 AM — Morning brief posted to Discord."""
@@ -325,7 +292,21 @@ class HeartbeatScheduler:
         if queue_count > 0:
             brief += f"**Queue:** {queue_count} item{'s' if queue_count != 1 else ''} waiting for your input\n\n"
 
-        brief += f"**Vault:** {vault_file_count} files\n"
+        # Vault health stats (if knowledge manager available)
+        if self.knowledge_manager is not None:
+            try:
+                health = await self.knowledge_manager.vault_health()
+                brief += (
+                    f"**Vault:** {health['total_files']} files "
+                    f"({health['indexed_files']} indexed, "
+                    f"{health['stale_files']} stale, "
+                    f"{health['orphan_files']} orphans)\n"
+                )
+            except Exception:
+                logger.warning("Failed to get vault health for morning brief", exc_info=True)
+                brief += f"**Vault:** {vault_file_count} files\n"
+        else:
+            brief += f"**Vault:** {vault_file_count} files\n"
 
         log_entry(self.vault_path, "HEARTBEAT_MORNING", "Morning brief generated", brief)
 
@@ -359,7 +340,7 @@ class HeartbeatScheduler:
         if self._discord_post:
             await self._discord_post(summary)
 
-    # ─── Status report (on-demand via /status) ───────────────────────
+    # --- Status report (on-demand via /status) --------------------------------
 
     async def get_status_report(self) -> str:
         """Generate an immediate status report for the /status command."""
@@ -391,7 +372,7 @@ class HeartbeatScheduler:
             f"- Vault saves: {today_stats['vault_saves']}\n"
         )
 
-    # ─── Helpers ─────────────────────────────────────────────────────
+    # --- Helpers ---------------------------------------------------------------
 
     def _count_queue_items(self) -> int:
         """Count items in _ivy/queue/ needing Kyle's input."""

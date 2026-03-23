@@ -132,6 +132,11 @@ class IvyDiscordBot(discord.Client):
         self.brain.knowledge_manager = knowledge_manager
         self.brain.tool_executor.knowledge_manager = knowledge_manager
 
+    def set_approval_queue(self, approval_queue):
+        """Attach the approval queue for ASK-level permission requests."""
+        self.brain.approval_queue = approval_queue
+        self.brain.tool_executor.approval_queue = approval_queue
+
     def queue_startup_message(self, channel_name: str, message: str):
         """Queue a message to be sent to a specific channel once the bot is ready."""
         self._startup_messages.append((channel_name, message))
@@ -310,7 +315,7 @@ class IvyDiscordBot(discord.Client):
         log_entry(
             self.vault_path,
             "MESSAGE_OUT",
-            f"Ivy → #{message.channel.name} via {result.model_used}{cost_note}",
+            f"Ivy -> #{message.channel.name} via {result.model_used}{cost_note}",
             result.response[:500],
         )
 
@@ -366,8 +371,8 @@ class IvyDiscordBot(discord.Client):
     async def _handle_vault_save(self, channel_id: int, content: str) -> str:
         """Handle a vault save request from Kyle."""
         # Strip the trigger phrase to get the actual content to save
-        # e.g., "remember this: X" → "X"
-        # e.g., "save this — some note" → "some note"
+        # e.g., "remember this: X" -> "X"
+        # e.g., "save this — some note" -> "some note"
         cleaned = SAVE_PATTERNS.sub("", content).strip()
         cleaned = cleaned.lstrip(":—–-").strip()
 

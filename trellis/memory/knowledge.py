@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from trellis.hands.vault import INTERNAL_DIRS, search_vault
@@ -32,6 +34,13 @@ VECTOR_WEIGHT = 0.7
 
 # Batch size for indexing (don't overwhelm Ollama)
 INDEX_BATCH_SIZE = 10
+
+# Vault health thresholds
+STALE_DAYS = 90
+STALE_MIN_BYTES = 200
+
+# Wikilink pattern for orphan detection
+_WIKILINK_RE = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]")
 
 
 def _content_hash(content: str) -> str:
@@ -55,6 +64,7 @@ class KnowledgeManager:
         """
         self.vault_path = Path(vault_path)
         self.ollama_url = ollama_url
+        self._last_indexed_at: datetime | None = None
 
         db_path = self.vault_path / "_ivy" / "data" / "vectors.db"
         self.vector_store = VectorStore(db_path)
@@ -91,6 +101,8 @@ class KnowledgeManager:
                 except Exception as exc:
                     logger.error("Error indexing %s: %s", file_path, exc)
                     stats["errors"] += 1
+
+        self._last_indexed_at = datetime.now()
 
         logger.info(
             "Vault index complete: %d indexed, %d skipped, %d errors",
@@ -159,6 +171,102 @@ class KnowledgeManager:
         # 4. Sort by combined score descending, return top N
         merged.sort(key=lambda r: r["score"], reverse=True)
         return merged[:limit]
+
+    async def vault_health(self) -> dict:
+        """Compute vault health statistics.
+
+        Returns:
+            {
+                "total_files": int,
+                "indexed_files": int,
+                "stale_files": int,
+                "orphan_files": int,
+                "last_indexed": str | None,   # ISO format datetime
+                "index_coverage_pct": float,
+            }
+        """
+        if not self.vault_path.is_dir():
+            return {
+                "total_files": 0,
+                "indexed_files": 0,
+                "stale_files": 0,
+                "orphan_files": 0,
+                "last_indexed": None,
+                "index_coverage_pct": 0.0,
+            }
+
+        # Collect all vault .md files (excluding internal dirs)
+        md_files: list[Path] = []
+        for f in self.vault_path.rglob("*.md"):
+            rel = f.relative_to(self.vault_path)
+            if any(part in INTERNAL_DIRS for part in rel.parts):
+                continue
+            md_files.append(f)
+
+        total_files = len(md_files)
+        indexed_files = self.vector_store.count()
+
+        # Stale files: not modified in 90+ days AND under 200 bytes
+        now = datetime.now()
+        stale_cutoff = now - timedelta(days=STALE_DAYS)
+        stale_files = 0
+        for f in md_files:
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                size = f.stat().st_size
+                if mtime < stale_cutoff and size < STALE_MIN_BYTES:
+                    stale_files += 1
+            except OSError:
+                continue
+
+        # Orphan files: .md files with no inbound [[wikilink]] from other files
+        orphan_files = self._count_orphans(md_files)
+
+        # Coverage
+        index_coverage_pct = (
+            round(indexed_files / total_files * 100, 1)
+            if total_files > 0
+            else 0.0
+        )
+
+        last_indexed = (
+            self._last_indexed_at.isoformat()
+            if self._last_indexed_at
+            else None
+        )
+
+        return {
+            "total_files": total_files,
+            "indexed_files": indexed_files,
+            "stale_files": stale_files,
+            "orphan_files": orphan_files,
+            "last_indexed": last_indexed,
+            "index_coverage_pct": index_coverage_pct,
+        }
+
+    def _count_orphans(self, md_files: list[Path]) -> int:
+        """Count files with no inbound wikilinks from other vault files."""
+        # Collect all outbound link targets across the vault
+        linked_stems: set[str] = set()
+        for f in md_files:
+            try:
+                content = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for match in _WIKILINK_RE.finditer(content):
+                target = match.group(1).strip()
+                # Handle paths like "folder/note" — just use the last part
+                if "/" in target:
+                    target = target.rsplit("/", 1)[-1]
+                linked_stems.add(target)
+
+        # Orphans: files whose stem is not in any other file's outbound links
+        orphan_count = 0
+        for f in md_files:
+            if f.stem not in linked_stems:
+                orphan_count += 1
+
+        return orphan_count
 
     def _merge_results(
         self,

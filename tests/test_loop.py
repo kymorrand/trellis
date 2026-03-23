@@ -17,7 +17,7 @@ from trellis.core.loop import (
 from trellis.security.permissions import Permission
 
 
-# ─── Event ───────────────────────────────────────────────
+# --- Event ---------------------------------------------------------
 
 
 class TestEvent:
@@ -43,7 +43,7 @@ class TestEvent:
         assert e.metadata["key"] == "value"
 
 
-# ─── TOOL_DEFINITIONS ────────────────────────────────────
+# --- TOOL_DEFINITIONS ----------------------------------------------
 
 
 class TestToolDefinitions:
@@ -62,7 +62,7 @@ class TestToolDefinitions:
         assert "journal_read" in names
 
 
-# ─── ToolExecutor ────────────────────────────────────────
+# --- ToolExecutor ---------------------------------------------------
 
 
 class TestToolExecutor:
@@ -153,10 +153,27 @@ class TestToolExecutor:
             assert "Permission denied" in result
 
     @pytest.mark.asyncio
-    async def test_ask_permission(self, executor):
+    async def test_ask_permission_no_queue(self, executor):
+        """ASK permission without queue — soft deny with message."""
         with patch("trellis.core.loop.check_permission", return_value=Permission.ASK):
             result = await executor.execute("vault_search", {"query": "test"})
             assert "approval" in result.lower()
+            assert "noted" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_ask_permission_with_queue(self, vault):
+        """ASK permission with queue — creates queue item."""
+        mock_queue = MagicMock()
+        mock_queue.add_item.return_value = "20260322-140000"
+        executor = ToolExecutor(vault_path=vault, approval_queue=mock_queue)
+        with patch("trellis.core.loop.check_permission", return_value=Permission.ASK):
+            result = await executor.execute("vault_search", {"query": "test"})
+            assert "approval" in result.lower()
+            assert "queue" in result.lower()
+            assert "20260322-140000" in result
+            mock_queue.add_item.assert_called_once()
+            call_kwargs = mock_queue.add_item.call_args
+            assert call_kwargs[1]["item_type"] == "tool_approval"
 
     @pytest.mark.asyncio
     async def test_agent_state_updated(self, vault):
@@ -222,7 +239,7 @@ class TestToolExecutor:
         assert "test-note.md" in result
 
 
-# ─── AgentBrain ──────────────────────────────────────────
+# --- AgentBrain ----------------------------------------------------
 
 
 class TestAgentBrain:
@@ -273,6 +290,20 @@ class TestAgentBrain:
             )
         assert brain.knowledge_manager is mock_km
         assert brain.tool_executor.knowledge_manager is mock_km
+
+    def test_construction_with_approval_queue(self, mock_anthropic, mock_router, vault):
+        """AgentBrain accepts and stores approval_queue."""
+        mock_queue = MagicMock()
+        with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
+            brain = AgentBrain(
+                anthropic_client=mock_anthropic,
+                router=mock_router,
+                vault_path=vault,
+                system_prompt="Test",
+                approval_queue=mock_queue,
+            )
+        assert brain.approval_queue is mock_queue
+        assert brain.tool_executor.approval_queue is mock_queue
 
     def test_set_role_fallback(self, brain):
         """Invalid role should fall back gracefully."""
