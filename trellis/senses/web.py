@@ -5,7 +5,8 @@ Serves Trellis UI via FastAPI on Greenhouse.
 Accessed locally or via Tailscale from other devices.
 
 Pages:
-    /        — Living Canvas (agent state, vault overview)
+    /        — Start screen (front porch landing page)
+    /canvas  — Living Canvas (agent state, vault overview)
     /brief   — Morning Brief (phone-first, approval interface)
     /garden  — Gardener Activity (Armando's development reports)
 
@@ -141,6 +142,11 @@ def create_app(
     # ─── Pages ────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
+    async def start():
+        """Start screen — front porch landing page."""
+        return (STATIC_DIR / "start.html").read_text(encoding="utf-8")
+
+    @app.get("/canvas", response_class=HTMLResponse)
     async def canvas():
         """Living Canvas — agent state + vault overview."""
         return (STATIC_DIR / "canvas.html").read_text(encoding="utf-8")
