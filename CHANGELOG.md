@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-23 — Sprint 3: Linear Integration in Morning Brief (MOR-19)
+
+### Morning Brief — Linear Tasks
+
+- **Linear section in morning brief** — When `IVY_LINEAR_API_KEY_MORRANDMORE` is configured, the 8:00 AM morning brief now includes active Linear tasks from the MOR team: total active count, top 3 priority items (sorted Urgent > High > Normal > Low > None), and any blocked items.
+- **Graceful degradation** — If no Linear API key is configured, the section is silently skipped. If the Linear API call fails at runtime, the error is logged and the brief posts without the Linear section.
+- **`HeartbeatScheduler.linear_client`** — New optional `LinearClient` parameter. `scripts/run_discord.py` creates and passes the client when the env var is present.
+
+### Status Report Rewrite
+
+- **Formatted output** — `get_status_report()` now returns markdown-formatted output with uptime, tick count, vault stats, and API spend breakdown instead of plain-text single-line metrics.
+
+### Testing
+
+- **`tests/test_heartbeat.py`** — 6 new tests for Linear morning brief integration (with client, without client, API failure graceful degradation, priority sorting, all-completed, blocked detection by state name). Status report tests updated to match new format.
+- **`tests/test_queue.py`** (new) — 12 tests covering ApprovalQueue operations: add with/without tool fields, frontmatter serialization, backward compat, get/approve/dismiss, empty queue, multiple items.
+
+---
+
 ## 2026-03-23 — MOR-28: Wire Linear Client into ReAct Loop
 
 Ivy can now read and search the Morrandmore Linear board directly through the ReAct tool loop.
@@ -207,7 +226,7 @@ The Trellis design system and web interface go live. Ivy's heartbeat is now visi
 ### Agent State Tracking
 
 - **AgentState** (`trellis/core/agent_state.py`) — In-memory state with SSE subscriber queues
-- Discord bot instrumented: idle → thinking → acting transitions visible on web in real-time
+- Discord bot instrumented: idle -> thinking -> acting transitions visible on web in real-time
 - 5 GSAP-animated states: idle (breathing), thinking (ripple), acting (bob), waiting (pulse), reporting (settle)
 
 ### Approval Queue

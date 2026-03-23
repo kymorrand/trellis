@@ -22,6 +22,7 @@ from trellis.core.agent_state import AgentState  # noqa: E402
 from trellis.core.config import load_config  # noqa: E402
 from trellis.core.heartbeat import HeartbeatScheduler  # noqa: E402
 from trellis.core.queue import ApprovalQueue  # noqa: E402
+from trellis.hands.linear_client import LinearClient  # noqa: E402
 from trellis.memory.knowledge import KnowledgeManager  # noqa: E402
 from trellis.senses.discord_channel import create_bot  # noqa: E402
 from trellis.senses.file_watcher import FileWatcher  # noqa: E402
@@ -58,6 +59,16 @@ async def _index_vault_background(knowledge_manager: KnowledgeManager) -> None:
         logger.error("Background vault indexing failed: %s", e, exc_info=True)
 
 
+def _create_linear_client(config: dict) -> LinearClient | None:
+    """Create a LinearClient for Morrandmore if the API key is configured."""
+    api_key = config.get("linear_key_morrandmore")
+    if not api_key:
+        logger.info("Linear: no API key configured (IVY_LINEAR_API_KEY_MORRANDMORE), skipping")
+        return None
+    logger.info("Linear: Morrandmore client configured")
+    return LinearClient(api_key=api_key, workspace_name="Morrandmore")
+
+
 async def run_all(config: dict):
     """Run Discord bot, web server, heartbeat, and file watcher as concurrent async tasks."""
     # Shared state objects
@@ -71,6 +82,9 @@ async def run_all(config: dict):
         ollama_url=ollama_url,
     )
 
+    # Linear client (optional — needs IVY_LINEAR_API_KEY_MORRANDMORE)
+    linear_client = _create_linear_client(config)
+
     # Discord bot
     bot = create_bot(config)
     bot.set_agent_state(agent_state)
@@ -83,6 +97,7 @@ async def run_all(config: dict):
         budget_monthly=config.get("budget_monthly", 100.0),
         discord_post_callback=bot.post_to_discord,
         knowledge_manager=knowledge_manager,
+        linear_client=linear_client,
     )
     bot.set_heartbeat(heartbeat)
 

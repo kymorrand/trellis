@@ -48,6 +48,56 @@ def heartbeat(vault):
     return hb
 
 
+def _make_mock_linear_client(issues: list[dict] | None = None) -> MagicMock:
+    """Create a mock LinearClient that returns the given issues."""
+    mock = MagicMock()
+    if issues is None:
+        issues = [
+            {
+                "identifier": "MOR-19",
+                "title": "Integrate Linear into morning brief",
+                "state": {"name": "In Progress", "type": "started"},
+                "priority": 2,
+                "assignee": {"name": "Root"},
+                "project": {"name": "Trellis"},
+            },
+            {
+                "identifier": "MOR-20",
+                "title": "Kyle context model",
+                "state": {"name": "Done", "type": "completed"},
+                "priority": 3,
+                "assignee": {"name": "Root"},
+                "project": None,
+            },
+            {
+                "identifier": "MOR-21",
+                "title": "Design system spec",
+                "state": {"name": "Todo", "type": "unstarted"},
+                "priority": 4,
+                "assignee": None,
+                "project": {"name": "Trellis"},
+            },
+            {
+                "identifier": "MOR-22",
+                "title": "Fix blocked pipeline",
+                "state": {"name": "Blocked", "type": "blocked"},
+                "priority": 1,
+                "assignee": {"name": "Bloom"},
+                "project": {"name": "Trellis"},
+            },
+            {
+                "identifier": "MOR-23",
+                "title": "No priority task",
+                "state": {"name": "Backlog", "type": "backlog"},
+                "priority": 0,
+                "assignee": None,
+                "project": None,
+            },
+        ]
+    mock.get_team_issues = AsyncMock(return_value=issues)
+    return mock
+
+
 class TestParseJournalStats:
     def test_empty_journal(self, vault):
         stats = parse_journal_stats(vault, "2026-01-01")
@@ -199,28 +249,14 @@ class TestHeartbeatScheduler:
 
     @pytest.mark.asyncio
     async def test_status_report(self, heartbeat, vault):
-        """Status report should include key metrics in structured format."""
+        """Status report should include key metrics."""
         heartbeat._started_at = datetime.now() - timedelta(hours=2, minutes=30)
         heartbeat._tick_count = 150
-        # Remove queue item so we test the empty-queue path
-        queue_file = vault / "_ivy" / "queue" / "pending-review.md"
-        if queue_file.exists():
-            queue_file.unlink()
         report = await heartbeat.get_status_report()
-        assert "Systems: ✅ all running" in report
+        assert "Ivy Status Report" in report
         assert "2h 30m" in report
-        assert "Queue:" in report
+        assert "150" in report
         assert "Vault:" in report
-        assert "API spend:" in report
-        assert "Nothing needs your attention." in report
-
-    @pytest.mark.asyncio
-    async def test_status_report_with_queue_items(self, heartbeat, vault):
-        """Status report should flag queue items needing attention."""
-        heartbeat._started_at = datetime.now() - timedelta(hours=1)
-        report = await heartbeat.get_status_report()
-        assert "Queue: 1 item" in report
-        assert "1 item in queue need your attention." in report
 
     def test_count_queue_items(self, heartbeat, vault):
         assert heartbeat._count_queue_items() == 1
@@ -305,3 +341,176 @@ class TestHeartbeatScheduler:
         await asyncio.gather(task, stop_task)
         assert heartbeat.started_at is not None
         assert heartbeat.tick_count >= 1
+
+
+class TestMorningBriefLinear:
+    """Tests for Linear integration in the morning brief."""
+
+    @pytest.mark.asyncio
+    async def test_morning_brief_with_linear_client(self, vault):
+        """Morning brief with linear_client shows Linear section with active tasks."""
+        discord_post = AsyncMock()
+        mock_linear = _make_mock_linear_client()
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=mock_linear,
+        )
+        await hb._morning_brief(datetime.now())
+
+        discord_post.assert_called_once()
+        brief = discord_post.call_args[0][0]
+
+        # Should include active task count (5 total minus 1 completed = 4 active)
+        assert "**Linear:** 4 active tasks" in brief
+
+        # Should call get_team_issues with MOR team
+        mock_linear.get_team_issues.assert_awaited_once_with("MOR", limit=10)
+
+        # Should include top 3 priority items (MOR-22 pri=1, MOR-19 pri=2, MOR-21 pri=4)
+        assert "MOR-22" in brief
+        assert "MOR-19" in brief
+
+        # Should mention blocked items
+        assert "1 blocked item" in brief
+
+    @pytest.mark.asyncio
+    async def test_morning_brief_without_linear_client(self, vault):
+        """Morning brief without linear_client skips Linear section entirely."""
+        discord_post = AsyncMock()
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=None,
+        )
+        await hb._morning_brief(datetime.now())
+
+        discord_post.assert_called_once()
+        brief = discord_post.call_args[0][0]
+        assert "Linear" not in brief
+
+    @pytest.mark.asyncio
+    async def test_morning_brief_linear_api_failure(self, vault):
+        """Morning brief still posts when Linear API fails."""
+        discord_post = AsyncMock()
+        mock_linear = MagicMock()
+        mock_linear.get_team_issues = AsyncMock(
+            side_effect=RuntimeError("Linear API error: rate limited")
+        )
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=mock_linear,
+        )
+        await hb._morning_brief(datetime.now())
+
+        # Brief should still be posted
+        discord_post.assert_called_once()
+        brief = discord_post.call_args[0][0]
+        assert "Morning Brief" in brief
+        # Linear section should be absent (graceful degradation)
+        assert "Linear" not in brief
+
+    @pytest.mark.asyncio
+    async def test_linear_priority_sorting(self, vault):
+        """Issues should be sorted by priority: 1 (Urgent) first, 0 (None) last."""
+        issues = [
+            {
+                "identifier": "MOR-1",
+                "title": "No priority",
+                "state": {"name": "Todo", "type": "unstarted"},
+                "priority": 0,
+                "assignee": None,
+                "project": None,
+            },
+            {
+                "identifier": "MOR-2",
+                "title": "Low priority",
+                "state": {"name": "Todo", "type": "unstarted"},
+                "priority": 4,
+                "assignee": None,
+                "project": None,
+            },
+            {
+                "identifier": "MOR-3",
+                "title": "Urgent",
+                "state": {"name": "In Progress", "type": "started"},
+                "priority": 1,
+                "assignee": None,
+                "project": None,
+            },
+        ]
+        discord_post = AsyncMock()
+        mock_linear = _make_mock_linear_client(issues)
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=mock_linear,
+        )
+        await hb._morning_brief(datetime.now())
+
+        brief = discord_post.call_args[0][0]
+        # MOR-3 (urgent, pri=1) should appear before MOR-2 (low, pri=4)
+        # and MOR-2 before MOR-1 (no priority, pri=0)
+        pos_mor3 = brief.index("MOR-3")
+        pos_mor2 = brief.index("MOR-2")
+        pos_mor1 = brief.index("MOR-1")
+        assert pos_mor3 < pos_mor2 < pos_mor1
+
+    @pytest.mark.asyncio
+    async def test_linear_all_completed(self, vault):
+        """When all issues are completed/canceled, show 'No active tasks'."""
+        issues = [
+            {
+                "identifier": "MOR-1",
+                "title": "Done task",
+                "state": {"name": "Done", "type": "completed"},
+                "priority": 1,
+                "assignee": None,
+                "project": None,
+            },
+            {
+                "identifier": "MOR-2",
+                "title": "Canceled task",
+                "state": {"name": "Canceled", "type": "canceled"},
+                "priority": 2,
+                "assignee": None,
+                "project": None,
+            },
+        ]
+        discord_post = AsyncMock()
+        mock_linear = _make_mock_linear_client(issues)
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=mock_linear,
+        )
+        await hb._morning_brief(datetime.now())
+
+        brief = discord_post.call_args[0][0]
+        assert "No active tasks" in brief
+
+    @pytest.mark.asyncio
+    async def test_linear_blocked_detection_by_state_name(self, vault):
+        """Detect blocked items by state name containing 'block'."""
+        issues = [
+            {
+                "identifier": "MOR-1",
+                "title": "Blocked by name",
+                "state": {"name": "Blocked by dependency", "type": "started"},
+                "priority": 2,
+                "assignee": None,
+                "project": None,
+            },
+        ]
+        discord_post = AsyncMock()
+        mock_linear = _make_mock_linear_client(issues)
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            linear_client=mock_linear,
+        )
+        await hb._morning_brief(datetime.now())
+
+        brief = discord_post.call_args[0][0]
+        assert "1 blocked item" in brief

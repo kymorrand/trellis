@@ -36,3 +36,13 @@
 1. When adding new sections to SOUL.md, update `load_soul_local()` `keep` list.
 2. Never launch Ivy via `nohup` — always use systemd.
 3. After restarting Ivy, verify single-instance with `ps aux | grep run_discord`.
+
+### Session End — Linear Board Update
+- MOR-21 through MOR-26: all moved to **Done**
+- **MOR-29** created: [Root] Graceful SIGTERM handling for Ivy service (Priority: High)
+  - SIGTERM not handled → 90+ second shutdown → systemd SIGKILL
+  - Acceptance: register signal handler, graceful disconnect, <5s shutdown
+
+### Pending for Kyle
+- Restart Ivy service to pick up MOR-25/MOR-26 changes (local model grounding + router keywords)
+- MOR-29 ready for next sprint planning

@@ -28,6 +28,7 @@ from trellis.hands.github_client import vault_backup
 from trellis.memory.journal import log_entry
 
 if TYPE_CHECKING:
+    from trellis.hands.linear_client import LinearClient
     from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
@@ -42,11 +43,13 @@ class HeartbeatScheduler:
         budget_monthly: float = 100.0,
         discord_post_callback=None,
         knowledge_manager: KnowledgeManager | None = None,
+        linear_client: LinearClient | None = None,
     ):
         self.vault_path = Path(vault_path)
         self.budget_monthly = budget_monthly
         self._discord_post = discord_post_callback
         self.knowledge_manager = knowledge_manager
+        self.linear_client = linear_client
         self._running = False
         self._started_at: datetime | None = None
         self._tick_count = 0
@@ -192,14 +195,14 @@ class HeartbeatScheduler:
             # Alert Discord on failures
             if "failed" in result.lower() or "BLOCKED" in result:
                 if self._discord_post:
-                    await self._discord_post(f"🚨 **{result}**")
+                    await self._discord_post(f"\U0001f6a8 **{result}**")
 
         except Exception as e:
             error_msg = f"Nightly backup error: {e}"
             log_entry(self.vault_path, "HEARTBEAT_BACKUP_FAIL", error_msg)
             logger.error(error_msg)
             if self._discord_post:
-                await self._discord_post(f"🚨 **{error_msg}**")
+                await self._discord_post(f"\U0001f6a8 **{error_msg}**")
 
     async def _journal_rollover(self, now: datetime):
         """Create tomorrow's journal file and summarize today."""
@@ -247,7 +250,7 @@ class HeartbeatScheduler:
         budget_pct = (monthly_cost / self.budget_monthly * 100) if self.budget_monthly > 0 else 0
         if budget_pct > 75:
             warning = (
-                f"⚠️ **Budget alert:** ${monthly_cost:.2f} / ${self.budget_monthly:.2f} "
+                f"\u26a0\ufe0f **Budget alert:** ${monthly_cost:.2f} / ${self.budget_monthly:.2f} "
                 f"({budget_pct:.0f}% of monthly budget)"
             )
             log_entry(self.vault_path, "HEARTBEAT_BUDGET_WARN", warning)
@@ -283,7 +286,7 @@ class HeartbeatScheduler:
         overnight_summary = self._get_overnight_summary(now)
 
         brief = (
-            f"🌱 **Morning Brief — {now.strftime('%A, %B %d')}**\n\n"
+            f"\U0001f331 **Morning Brief — {now.strftime('%A, %B %d')}**\n\n"
         )
 
         if overnight_summary:
@@ -291,6 +294,9 @@ class HeartbeatScheduler:
 
         if queue_count > 0:
             brief += f"**Queue:** {queue_count} item{'s' if queue_count != 1 else ''} waiting for your input\n\n"
+
+        # Linear tasks
+        brief += await self._get_linear_brief_section()
 
         # Vault health stats (if knowledge manager available)
         if self.knowledge_manager is not None:
@@ -313,6 +319,60 @@ class HeartbeatScheduler:
         if self._discord_post:
             await self._discord_post(brief)
 
+    async def _get_linear_brief_section(self) -> str:
+        """Fetch active Linear tasks and format a brief section.
+
+        Returns an empty string if no linear_client is configured.
+        Catches and logs errors to avoid crashing the morning brief.
+        """
+        if self.linear_client is None:
+            return ""
+
+        try:
+            from trellis.hands.linear_client import format_issues
+
+            issues = await self.linear_client.get_team_issues("MOR", limit=10)
+
+            # Filter to non-completed/non-canceled issues
+            active_issues = [
+                issue for issue in issues
+                if issue.get("state", {}).get("type", "") not in {"completed", "canceled"}
+            ]
+
+            if not active_issues:
+                return "**Linear:** No active tasks\n\n"
+
+            # Sort by priority: 1=Urgent, 2=High, 3=Normal, 4=Low, 0=No priority (treat 0 as lowest)
+            def priority_sort_key(issue: dict) -> int:
+                pri = issue.get("priority", 0)
+                return pri if pri > 0 else 5  # Push 0 (no priority) after 4 (low)
+
+            active_issues.sort(key=priority_sort_key)
+
+            # Find blocked items
+            blocked = [
+                issue for issue in active_issues
+                if issue.get("state", {}).get("type", "") == "blocked"
+                or "block" in issue.get("state", {}).get("name", "").lower()
+            ]
+
+            # Top 3 priority items
+            top_3 = active_issues[:3]
+            top_3_formatted = format_issues(top_3)
+
+            section = f"**Linear:** {len(active_issues)} active task{'s' if len(active_issues) != 1 else ''}\n"
+            section += f"{top_3_formatted}\n"
+
+            if blocked:
+                section += f"*{len(blocked)} blocked item{'s' if len(blocked) != 1 else ''}*\n"
+
+            section += "\n"
+            return section
+
+        except Exception:
+            logger.error("Failed to fetch Linear tasks for morning brief", exc_info=True)
+            return ""
+
     async def _end_of_day(self, now: datetime):
         """6:00 PM — End of day summary posted to Discord."""
         logger.info("Heartbeat: generating end-of-day summary")
@@ -322,7 +382,7 @@ class HeartbeatScheduler:
         vault_file_count = self._count_vault_files()
 
         summary = (
-            f"🌿 **End of Day — {now.strftime('%A, %B %d')}**\n\n"
+            f"\U0001f33f **End of Day — {now.strftime('%A, %B %d')}**\n\n"
             f"**Today's activity:**\n"
             f"- Messages processed: {today_stats['messages_in']}\n"
             f"- Responses sent: {today_stats['messages_out']}\n"
@@ -348,7 +408,6 @@ class HeartbeatScheduler:
         today_stats = parse_journal_stats(self.vault_path, now.strftime("%Y-%m-%d"))
         monthly_cost = self._get_monthly_cost(now)
         vault_file_count = self._count_vault_files()
-        queue_count = self._count_queue_items()
 
         uptime = "not started"
         if self._started_at:
@@ -359,21 +418,19 @@ class HeartbeatScheduler:
 
         budget_pct = (monthly_cost / self.budget_monthly * 100) if self.budget_monthly > 0 else 0
 
-        lines = [
-            f"Systems: ✅ all running (uptime: {uptime})",
-            f"Queue: {queue_count} item{'s' if queue_count != 1 else ''}",
-            f"Vault: {vault_file_count} files",
-            f"API spend: ${today_stats['cost_usd']:.2f} today / ${monthly_cost:.2f} this month ({budget_pct:.1f}% of budget)",
-            f"Messages: {today_stats['messages_in']} in, {today_stats['messages_out']} out today",
-        ]
-
-        # Only add attention line if there are queue items
-        if queue_count > 0:
-            lines.append(f"\n{queue_count} item{'s' if queue_count != 1 else ''} in queue need your attention.")
-        else:
-            lines.append("\nNothing needs your attention.")
-
-        return "\n".join(lines)
+        return (
+            f"\U0001f331 **Ivy Status Report**\n\n"
+            f"**Uptime:** {uptime}\n"
+            f"**Heartbeat ticks:** {self._tick_count}\n"
+            f"**Vault:** {vault_file_count} files\n\n"
+            f"**API spend today:** ${today_stats['cost_usd']:.4f}\n"
+            f"**API spend this month:** ${monthly_cost:.2f} / ${self.budget_monthly:.2f} "
+            f"({budget_pct:.0f}%)\n\n"
+            f"**Today's activity:**\n"
+            f"- Messages in: {today_stats['messages_in']}\n"
+            f"- Responses out: {today_stats['messages_out']}\n"
+            f"- Vault saves: {today_stats['vault_saves']}\n"
+        )
 
     # --- Helpers ---------------------------------------------------------------
 

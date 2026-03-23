@@ -1,67 +1,43 @@
-# Sprint 3b — Discord Approval Commands + Local Model Grounding
+# Sprint 3c — Fix `claude` PATH for Armando Dispatch Under systemd
 
-**Date:** 2026-03-22
-**Linear Issues:** MOR-22, MOR-23
+**Date:** 2026-03-23
 **Scope:** Root only (backend)
-**Status:** In Progress
+**Status:** Complete — shipped as `f1af98e`
 
-## MOR-22: Discord Approval Commands
+## Problem
 
-### Problem
-Queue items land in `_ivy/queue/` but Kyle can't approve them from Discord.
+When Ivy runs under systemd, `claude` isn't on the PATH. systemd provides a minimal PATH (`/usr/local/bin:/usr/bin:/bin`) that doesn't include `/home/kyle/.local/bin/` where the `claude` CLI is installed. This causes `armando_dispatch` to fail with `claude: not found`.
 
-### Implementation
+## Implementation
 
-**1. Extend queue item format (`trellis/core/queue.py`)**
-- Add `tool_name` and `tool_input` fields to `add_item()` and frontmatter
-- These store the pending tool call so it can be re-executed on approval
-- Backward compatible — existing items without these fields still work
+### 1. Resolve `claude` binary path dynamically (`trellis/core/loop.py`)
+- In `_armando_dispatch()`, use `shutil.which("claude")` to find the binary
+- If not found on PATH, fall back to `/home/kyle/.local/bin/claude`
+- If still not found, return a clear error message
+- Add `import shutil` (if not already present)
 
-**2. Add Discord commands (`trellis/senses/discord_channel.py`)**
-- `!queue` — List pending items with IDs
-- `!approve <id>` — Approve item, re-execute the tool call, return result
-- `!deny <id>` — Deny item with optional reason, move to dismissed/
+### 2. Update systemd service (`scripts/trellis.service`)
+- Add `Environment=PATH=/home/kyle/.local/bin:/usr/local/bin:/usr/bin:/bin`
+- This ensures all user-installed tools are accessible from the service
 
-**3. Wire approval to ToolExecutor**
-- On `!approve`, read queue item, extract tool_name + tool_input
-- Execute through ToolExecutor (bypassing permission check since Kyle approved)
-- Move item to approved/
-- Send result to Discord
+### 3. Tests
+- Test that `_armando_dispatch` uses full path to claude binary
+- Test fallback when `shutil.which` returns None
 
-### Files
-- `trellis/core/queue.py` — Add tool_name/tool_input to add_item and _parse_item
-- `trellis/senses/discord_channel.py` — Add !queue, !approve, !deny commands
-- `trellis/core/loop.py` — Update _queue_approval to pass tool context to queue
-- `tests/test_loop.py` — Update queue tests for new fields
-- `CHANGELOG.md`
+### Files (Root scope)
+- `trellis/core/loop.py` — Update `_armando_dispatch()` to resolve full path
+- `scripts/trellis.service` — Add PATH environment
+- `tests/test_loop.py` — Add tests for path resolution
+- `CHANGELOG.md` — Add entry
 
-## MOR-23: Prevent Local Model Fabrication
-
-### Problem
-qwen3 fabricates tool actions in text responses when it has no tool access.
-
-### Implementation (both options from the issue)
-
-**Option A: Strengthen local grounding (`trellis/mind/soul.py`)**
-- Append to `load_soul_local()` output, after the IMPORTANT section:
-  "You do NOT have access to any tools. You cannot search the vault, execute 
-  commands, dispatch Armando, or approve queue items. If Kyle asks you to DO 
-  something that requires a tool, tell him to prefix with /claude so the 
-  request routes to the cloud model which has tool access."
-
-**Option B: Route follow-ups to cloud (`trellis/mind/router.py`)**
-- Add "approve", "approved", "deny", "denied", "confirm" to SONNET_KEYWORDS
-
-### Files
-- `trellis/mind/soul.py` — Strengthen local grounding
-- `trellis/mind/router.py` — Add approval keywords
-- `tests/test_soul.py` — Test grounding text present
-- `tests/test_router.py` — Test approve/deny route to cloud
+### Files NOT to touch
+- `trellis/static/` — Bloom's scope
+- `trellis/senses/web.py` — Bloom's scope
+- `agents/ivy/SOUL.md` — Kyle approval required
 
 ## Acceptance Criteria
-1. `!queue` lists pending items in Discord
-2. `!approve <id>` executes the pending tool and returns result
-3. `!deny <id>` moves item to dismissed/ without executing
-4. Local model explicitly says it can't use tools
-5. "approved"/"approve"/"deny" route to cloud
-6. All tests pass, lint clean, CHANGELOG updated
+1. `_armando_dispatch` resolves `claude` to full path before executing
+2. Clear error if `claude` binary not found anywhere
+3. systemd service file includes user PATH
+4. Tests pass, lint clean, CHANGELOG updated
+5. After deploy: `!approve` on an armando_dispatch queue item should execute successfully
