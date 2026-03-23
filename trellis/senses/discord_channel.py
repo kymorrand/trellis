@@ -124,6 +124,8 @@ class IvyDiscordBot(discord.Client):
         self._primary_channel = None
         # Queued startup messages: list of (channel_name, message) to send on_ready
         self._startup_messages: list[tuple[str, str]] = []
+        # Track channels where last response used tools — force next message to cloud
+        self._last_response_had_tools: dict[int, bool] = {}
 
     def set_heartbeat(self, heartbeat):
         """Attach the heartbeat scheduler to the bot."""
@@ -343,6 +345,9 @@ class IvyDiscordBot(discord.Client):
                 self.agent_state.set("idle")
             return
 
+        # Force cloud routing if last response used tools (approval flow, etc.)
+        force_cloud = self._last_response_had_tools.pop(message.channel.id, False)
+
         # Build conversation and get response via AgentBrain
         if self.agent_state:
             self.agent_state.set("thinking", "processing message")
@@ -353,6 +358,7 @@ class IvyDiscordBot(discord.Client):
                         message.channel.id,
                         content,
                         channel_name=getattr(message.channel, "name", None) or "direct-message",
+                        force_cloud=force_cloud,
                     )
             except TimeoutError:
                 logger.error("Model call timed out (90s)")
@@ -379,6 +385,9 @@ class IvyDiscordBot(discord.Client):
                 if self.agent_state:
                     self.agent_state.set("idle")
                 return
+
+        # Track whether this response involved tools (force next message to cloud)
+        self._last_response_had_tools[message.channel.id] = result.used_tools
 
         # Append model indicator
         reply_with_indicator = f"{result.response}\n\n-# {result.indicator}"
@@ -417,6 +426,7 @@ class IvyDiscordBot(discord.Client):
         user_message: str,
         vault_context: str = "",
         channel_name: str = "",
+        force_cloud: bool = False,
     ) -> RouteResult:
         """Process message through AgentBrain (ReAct loop with tool calling)."""
         history = self.conversations[channel_id]
@@ -427,6 +437,7 @@ class IvyDiscordBot(discord.Client):
             content=user_message,
             channel_id=channel_id,
             channel_name=channel_name,
+            metadata={"force_cloud": force_cloud} if force_cloud else {},
         )
 
         # Process through the brain (handles context assembly, routing, tool calling)

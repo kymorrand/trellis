@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-22 — Context-Aware Post-Tool Routing (MOR-26)
+
+After Ivy makes a tool call or queues something for approval, Kyle's short follow-up ("yes", "do it") no longer misroutes to the local model.
+
+### Changes
+
+- **`RouteResult.used_tools`** (`trellis/mind/router.py`) — New `used_tools: bool` field on `RouteResult`. Defaults to `False`. Set to `True` by the ReAct loop when any tool calls were executed during the response.
+- **ReAct loop tracking** (`trellis/core/loop.py`) — `_react_loop()` tracks `any_tools_used` flag, set on both normal completion and max-rounds fallback returns.
+- **`force_cloud` routing override** (`trellis/core/loop.py`) — `AgentBrain.process()` checks `event.metadata["force_cloud"]`. When set, overrides `local` and `light` routes to `cloud`. Respects explicit `/local` and `/claude` prefixes (does not override `force_local` or `force_cloud` classifications).
+- **Per-channel tool tracking** (`trellis/senses/discord_channel.py`) — `_last_response_had_tools` dict tracks whether each channel's last response used tools. On the next message, if the flag is set, passes `force_cloud=True` to `_get_response`, which propagates via `Event.metadata` to `AgentBrain`.
+- **`_get_response` metadata** (`trellis/senses/discord_channel.py`) — Accepts optional `force_cloud` parameter, passes it through `Event.metadata` to the brain.
+
+### Testing
+
+- **`tests/test_loop.py`** — 7 new tests: `used_tools` flag set/unset/max-rounds, `force_cloud` overrides local, overrides light, does not override `force_local`, does not interfere with `force_cloud`.
+
+---
+
 ## 2026-03-22 — Sprint 3b: Discord Approval Commands + Local Model Grounding (MOR-22, MOR-23)
 
 ### Discord Approval Commands (MOR-22)

@@ -81,6 +81,7 @@ class RouteResult:
     is_local: bool
     cost_usd: float = 0.0
     indicator: str = ""
+    used_tools: bool = False
 
 
 @dataclass

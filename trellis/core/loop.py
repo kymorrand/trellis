@@ -530,6 +530,11 @@ class AgentBrain:
 
         # Route classification
         route = self.router.classify(classify_from)
+
+        # Override routing if force_cloud requested (post-tool follow-up)
+        if event.metadata.get("force_cloud") and route not in ("force_local", "force_cloud"):
+            route = "cloud"
+
         is_local = route in ("local", "force_local")
 
         if is_local:
@@ -575,6 +580,7 @@ class AgentBrain:
 
         total_cost = 0.0
         rounds = 0
+        any_tools_used = False
 
         while rounds < MAX_TOOL_ROUNDS:
             rounds += 1
@@ -633,9 +639,11 @@ class AgentBrain:
                     is_local=False,
                     cost_usd=total_cost,
                     indicator=CLOUD_INDICATOR,
+                    used_tools=any_tools_used,
                 )
 
             # Execute tool calls
+            any_tools_used = True
             # Add the assistant's response to messages
             messages.append({"role": "assistant", "content": response.content})
 
@@ -662,4 +670,5 @@ class AgentBrain:
             is_local=False,
             cost_usd=total_cost,
             indicator=CLOUD_INDICATOR,
+            used_tools=any_tools_used,
         )

@@ -515,3 +515,145 @@ class TestAgentBrain:
         event = Event(source="cli", content="/local hello")
         with pytest.raises(ConnectionError):
             await brain.process(event, [])
+
+    @pytest.mark.asyncio
+    async def test_used_tools_flag_set_when_tools_called(self, brain, mock_anthropic):
+        """used_tools should be True when the ReAct loop executes tool calls."""
+        # First response: tool_use
+        mock_tool_block = MagicMock()
+        mock_tool_block.type = "tool_use"
+        mock_tool_block.name = "shell_execute"
+        mock_tool_block.input = {"command": "echo test"}
+        mock_tool_block.id = "tool_456"
+
+        mock_response_1 = MagicMock()
+        mock_response_1.content = [mock_tool_block]
+        mock_response_1.usage = _mock_usage(100, 50)
+
+        # Second response: text (no tools)
+        mock_text_block = MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = "Done."
+
+        mock_response_2 = MagicMock()
+        mock_response_2.content = [mock_text_block]
+        mock_response_2.usage = _mock_usage(200, 80)
+
+        mock_anthropic.messages.create.side_effect = [mock_response_1, mock_response_2]
+
+        event = Event(source="cli", content="run echo test")
+        result = await brain.process(event, [])
+
+        assert result.used_tools is True
+
+    @pytest.mark.asyncio
+    async def test_used_tools_flag_false_when_no_tools(self, brain, mock_anthropic):
+        """used_tools should be False when model responds without tool calls."""
+        mock_text_block = MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = "Hello!"
+
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+        mock_response.usage = _mock_usage(100, 50)
+
+        mock_anthropic.messages.create.return_value = mock_response
+
+        event = Event(source="cli", content="architect something complex")
+        result = await brain.process(event, [])
+
+        assert result.used_tools is False
+
+    @pytest.mark.asyncio
+    async def test_used_tools_flag_set_on_max_rounds(self, brain, mock_anthropic):
+        """used_tools should be True even when max rounds exceeded."""
+        mock_tool_block = MagicMock()
+        mock_tool_block.type = "tool_use"
+        mock_tool_block.name = "shell_execute"
+        mock_tool_block.input = {"command": "echo loop"}
+        mock_tool_block.id = "tool_loop"
+
+        mock_response = MagicMock()
+        mock_response.content = [mock_tool_block]
+        mock_response.usage = _mock_usage(100, 50)
+
+        mock_anthropic.messages.create.return_value = mock_response
+
+        event = Event(source="cli", content="architect something complex")
+        result = await brain.process(event, [])
+
+        assert result.used_tools is True
+
+    @pytest.mark.asyncio
+    async def test_force_cloud_overrides_local_routing(self, brain, mock_router, mock_anthropic):
+        """force_cloud metadata should override local routing to cloud."""
+        mock_router.classify.return_value = "local"
+
+        # Set up cloud response (will go through _react_loop)
+        mock_text_block = MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = "Cloud response"
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+        mock_response.usage = _mock_usage(100, 50)
+        mock_anthropic.messages.create.return_value = mock_response
+
+        event = Event(source="cli", content="yes", metadata={"force_cloud": True})
+        result = await brain.process(event, [])
+
+        # Should have gone to cloud despite "local" classification
+        assert result.is_local is False
+        assert result.response == "Cloud response"
+        # router.route should NOT have been called (skipped local path)
+        mock_router.route.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_cloud_overrides_light_routing(self, brain, mock_router, mock_anthropic):
+        """force_cloud metadata should override light routing to full cloud with tools."""
+        mock_router.classify.return_value = "light"
+
+        mock_text_block = MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = "Full cloud response"
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+        mock_response.usage = _mock_usage(100, 50)
+        mock_anthropic.messages.create.return_value = mock_response
+
+        event = Event(source="cli", content="do it", metadata={"force_cloud": True})
+        result = await brain.process(event, [])
+
+        assert result.is_local is False
+        assert result.response == "Full cloud response"
+        # Should go through _react_loop (Anthropic API), not router.route
+        mock_anthropic.messages.create.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_force_cloud_does_not_override_force_local(self, brain, mock_router):
+        """force_cloud should NOT override explicit /local prefix."""
+        mock_router.classify.return_value = "force_local"
+        from trellis.mind.router import RouteResult
+        mock_router.route = AsyncMock(return_value=RouteResult(
+            response="local response", model_used="qwen3:14b", is_local=True, indicator="🌿"
+        ))
+
+        event = Event(source="cli", content="/local yes", metadata={"force_cloud": True})
+        result = await brain.process(event, [])
+        assert result.is_local is True
+
+    @pytest.mark.asyncio
+    async def test_force_cloud_does_not_override_force_cloud(self, brain, mock_router, mock_anthropic):
+        """force_cloud metadata should not interfere with explicit /claude prefix."""
+        mock_router.classify.return_value = "force_cloud"
+
+        mock_text_block = MagicMock()
+        mock_text_block.type = "text"
+        mock_text_block.text = "Cloud response"
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+        mock_response.usage = _mock_usage(100, 50)
+        mock_anthropic.messages.create.return_value = mock_response
+
+        event = Event(source="cli", content="/claude hello", metadata={"force_cloud": True})
+        result = await brain.process(event, [])
+        assert result.is_local is False
