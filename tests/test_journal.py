@@ -1,6 +1,5 @@
 """Tests for trellis.memory.journal — Daily journal logging."""
 
-import pytest
 from datetime import datetime
 
 from trellis.memory.journal import get_today_journal_path, log_entry

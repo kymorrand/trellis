@@ -2,7 +2,7 @@
 
 import pytest
 
-from trellis.mind.router import ModelRouter, SONNET_KEYWORDS, HAIKU_KEYWORDS
+from trellis.mind.router import ModelRouter
 
 
 class TestClassify:

@@ -25,7 +25,7 @@ def _mock_usage(input_tokens=100, output_tokens=50):
     usage.cache_creation_input_tokens = 0
     return usage
 
-from trellis.security.permissions import Permission
+from trellis.security.permissions import Permission  # noqa: E402
 
 
 # --- Event ---------------------------------------------------------

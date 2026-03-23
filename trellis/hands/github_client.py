@@ -128,7 +128,7 @@ async def vault_backup(vault_path: Path) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        msg = f"Vault backup BLOCKED — secrets detected:\n" + "\n".join(secrets)
+        msg = "Vault backup BLOCKED — secrets detected:\n" + "\n".join(secrets)
         logger.error(msg)
         log_entry(vault_path, "GITHUB_BACKUP", msg)
         return msg

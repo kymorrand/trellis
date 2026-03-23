@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 from trellis.memory.journal import log_entry

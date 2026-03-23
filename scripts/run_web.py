@@ -11,11 +11,11 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
-import uvicorn
-from trellis.core.agent_state import AgentState
-from trellis.core.config import load_config
-from trellis.core.queue import ApprovalQueue
-from trellis.senses.web import create_app
+import uvicorn  # noqa: E402
+from trellis.core.agent_state import AgentState  # noqa: E402
+from trellis.core.config import load_config  # noqa: E402
+from trellis.core.queue import ApprovalQueue  # noqa: E402
+from trellis.senses.web import create_app  # noqa: E402
 
 config = load_config(str(repo_root / ".env"))
 app = create_app(

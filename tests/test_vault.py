@@ -1,7 +1,6 @@
 """Tests for trellis.hands.vault — Vault read/write/search operations."""
 
 import pytest
-from pathlib import Path
 
 from trellis.hands.vault import (
     search_vault,

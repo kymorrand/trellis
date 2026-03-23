@@ -18,14 +18,14 @@ import uvicorn
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
-from trellis.core.agent_state import AgentState
-from trellis.core.config import load_config
-from trellis.core.heartbeat import HeartbeatScheduler
-from trellis.core.queue import ApprovalQueue
-from trellis.memory.knowledge import KnowledgeManager
-from trellis.senses.discord_channel import create_bot
-from trellis.senses.file_watcher import FileWatcher
-from trellis.senses.web import create_app
+from trellis.core.agent_state import AgentState  # noqa: E402
+from trellis.core.config import load_config  # noqa: E402
+from trellis.core.heartbeat import HeartbeatScheduler  # noqa: E402
+from trellis.core.queue import ApprovalQueue  # noqa: E402
+from trellis.memory.knowledge import KnowledgeManager  # noqa: E402
+from trellis.senses.discord_channel import create_bot  # noqa: E402
+from trellis.senses.file_watcher import FileWatcher  # noqa: E402
+from trellis.senses.web import create_app  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

@@ -37,7 +37,6 @@ from trellis.mind.router import (
     CLOUD_INDICATOR,
     CLOUD_MODEL,
     COSTS,
-    LOCAL_INDICATOR,
     ModelRouter,
     RouteResult,
 )
