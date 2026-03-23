@@ -2,11 +2,6 @@
 
 ## 2026-03-22 — Sprint 3: Armando Dispatch Tool (MOR-21)
 
-### Ivy Personality Revision (SOUL.md)
-
-- **Personality** — "Be direct" moved to first line. Garden metaphors downgraded from personality trait to "seasoning — not the meal." Added honesty rule for knowledge gaps.
-- **Response Quality** (new section) — Concrete over atmospheric. Answer the actual question. Short by default. Cite sources. Admit gaps. Banned filler phrases.
-
 Ivy can now launch Armando (The Gardener) for development work — the bridge between Kyle's personal agent and his multi-agent dev team.
 
 ### Armando Dispatch (`armando_dispatch` tool)
@@ -15,6 +10,11 @@ Ivy can now launch Armando (The Gardener) for development work — the bridge be
 - **Handler** (`trellis/core/loop.py`) — `ToolExecutor._armando_dispatch()` validates inputs (non-empty message, non-empty project_dir, directory exists on disk), builds the `claude` CLI command with `--dangerously-skip-permissions --agent thorn -p {message} --max-budget-usd 5 --no-session-persistence`, calls `execute_command()` with 1800s timeout.
 - **Permission** (`trellis/security/permissions.py`) — `armando_dispatch` set to `Permission.ASK`. Every dispatch requires Kyle's approval via the approval queue.
 - **Shell timeout** (`trellis/hands/shell.py`) — `execute_command()` now accepts an optional `timeout` parameter (default 30s, backward compatible). Also added `"claude"` to `ALLOWED_COMMANDS`.
+
+### Ivy Personality Revision (SOUL.md)
+
+- **Personality** — "Be direct" moved to first line. Garden metaphors downgraded from personality trait to "seasoning — not the meal." Added honesty rule for knowledge gaps.
+- **Response Quality** (new section) — Concrete over atmospheric. Answer the actual question. Short by default. Cite sources. Admit gaps. Banned filler phrases.
 
 ### Testing
 

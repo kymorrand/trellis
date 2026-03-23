@@ -199,14 +199,28 @@ class TestHeartbeatScheduler:
 
     @pytest.mark.asyncio
     async def test_status_report(self, heartbeat, vault):
-        """Status report should include key metrics."""
+        """Status report should include key metrics in structured format."""
         heartbeat._started_at = datetime.now() - timedelta(hours=2, minutes=30)
         heartbeat._tick_count = 150
+        # Remove queue item so we test the empty-queue path
+        queue_file = vault / "_ivy" / "queue" / "pending-review.md"
+        if queue_file.exists():
+            queue_file.unlink()
         report = await heartbeat.get_status_report()
-        assert "Ivy Status Report" in report
+        assert "Systems: ✅ all running" in report
         assert "2h 30m" in report
-        assert "150" in report
+        assert "Queue:" in report
         assert "Vault:" in report
+        assert "API spend:" in report
+        assert "Nothing needs your attention." in report
+
+    @pytest.mark.asyncio
+    async def test_status_report_with_queue_items(self, heartbeat, vault):
+        """Status report should flag queue items needing attention."""
+        heartbeat._started_at = datetime.now() - timedelta(hours=1)
+        report = await heartbeat.get_status_report()
+        assert "Queue: 1 item" in report
+        assert "1 item in queue need your attention." in report
 
     def test_count_queue_items(self, heartbeat, vault):
         assert heartbeat._count_queue_items() == 1

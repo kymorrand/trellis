@@ -348,6 +348,7 @@ class HeartbeatScheduler:
         today_stats = parse_journal_stats(self.vault_path, now.strftime("%Y-%m-%d"))
         monthly_cost = self._get_monthly_cost(now)
         vault_file_count = self._count_vault_files()
+        queue_count = self._count_queue_items()
 
         uptime = "not started"
         if self._started_at:
@@ -358,19 +359,21 @@ class HeartbeatScheduler:
 
         budget_pct = (monthly_cost / self.budget_monthly * 100) if self.budget_monthly > 0 else 0
 
-        return (
-            f"🌱 **Ivy Status Report**\n\n"
-            f"**Uptime:** {uptime}\n"
-            f"**Heartbeat ticks:** {self._tick_count}\n"
-            f"**Vault:** {vault_file_count} files\n\n"
-            f"**API spend today:** ${today_stats['cost_usd']:.4f}\n"
-            f"**API spend this month:** ${monthly_cost:.2f} / ${self.budget_monthly:.2f} "
-            f"({budget_pct:.0f}%)\n\n"
-            f"**Today's activity:**\n"
-            f"- Messages in: {today_stats['messages_in']}\n"
-            f"- Responses out: {today_stats['messages_out']}\n"
-            f"- Vault saves: {today_stats['vault_saves']}\n"
-        )
+        lines = [
+            f"Systems: ✅ all running (uptime: {uptime})",
+            f"Queue: {queue_count} item{'s' if queue_count != 1 else ''}",
+            f"Vault: {vault_file_count} files",
+            f"API spend: ${today_stats['cost_usd']:.2f} today / ${monthly_cost:.2f} this month ({budget_pct:.1f}% of budget)",
+            f"Messages: {today_stats['messages_in']} in, {today_stats['messages_out']} out today",
+        ]
+
+        # Only add attention line if there are queue items
+        if queue_count > 0:
+            lines.append(f"\n{queue_count} item{'s' if queue_count != 1 else ''} in queue need your attention.")
+        else:
+            lines.append("\nNothing needs your attention.")
+
+        return "\n".join(lines)
 
     # --- Helpers ---------------------------------------------------------------
 
