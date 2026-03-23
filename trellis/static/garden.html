@@ -39,6 +39,7 @@
       width: 1920px;
       height: 1080px;
       display: grid;
+      grid-template-columns: 1fr 340px;
       grid-template-rows: auto 1fr;
       padding: var(--space-8);
       gap: var(--space-6);
@@ -47,6 +48,7 @@
     /* ─── Header ─────────────────────────────── */
 
     .garden-header {
+      grid-column: 1 / -1;
       display: flex;
       align-items: baseline;
       justify-content: space-between;
@@ -89,9 +91,11 @@
       background: var(--color-cloud-dim);
     }
 
-    /* ─── Report List ────────────────────────── */
+    /* ─── Report List (left column) ──────────── */
 
     .garden-content {
+      grid-column: 1;
+      grid-row: 2;
       overflow-y: auto;
       overflow-x: hidden;
       padding: 0 var(--space-6);
@@ -112,7 +116,146 @@
       display: flex;
       flex-direction: column;
       gap: var(--space-4);
-      max-width: 1200px;
+    }
+
+    /* ─── Sidebar (right column) ─────────────── */
+
+    .garden-sidebar {
+      grid-column: 2;
+      grid-row: 2;
+      padding: 0 var(--space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .sidebar-label {
+      font-family: var(--font-display);
+      font-size: var(--text-sm);
+      font-variation-settings: "SOFT" 40, "WONK" 0;
+      color: var(--color-earth-light);
+      opacity: 0.35;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: var(--space-2);
+    }
+
+    /* ─── Health Card ────────────────────────── */
+
+    .health-card {
+      background: var(--color-cloud);
+      border: 1px solid var(--color-wood-light);
+      border-left: 3px solid var(--color-ivy);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      box-shadow: 0 1px 3px oklch(28% 0.02 55 / 0.08);
+    }
+
+    .health-card__title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 20;
+      font-size: var(--text-md);
+      line-height: 1.3;
+      color: var(--color-earth);
+      margin-bottom: var(--space-4);
+    }
+
+    .health-card__stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+      margin-bottom: var(--space-4);
+    }
+
+    .health-stat {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
+
+    .health-stat__value {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-md);
+      font-weight: 600;
+      color: var(--color-earth);
+    }
+
+    .health-stat__label {
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+    }
+
+    .health-stat__value--warn {
+      color: var(--color-wf-yellow);
+    }
+
+    .health-stat__value--danger {
+      color: var(--color-wf-red);
+    }
+
+    /* Coverage bar */
+    .health-coverage {
+      margin-bottom: var(--space-3);
+    }
+
+    .health-coverage__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: var(--space-1);
+    }
+
+    .health-coverage__label {
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+    }
+
+    .health-coverage__pct {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--color-earth);
+    }
+
+    .health-coverage__bar {
+      height: 6px;
+      background: var(--color-cloud-dim);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .health-coverage__fill {
+      height: 100%;
+      background: var(--color-leaf);
+      border-radius: 3px;
+      transition: width 600ms ease-out;
+    }
+
+    .health-coverage__fill--warn {
+      background: var(--color-wf-yellow);
+    }
+
+    .health-coverage__fill--danger {
+      background: var(--color-wf-red);
+    }
+
+    .health-card__footer {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-wood-light);
+      padding-top: var(--space-3);
+      border-top: 1px solid var(--color-cloud-dim);
+    }
+
+    /* Hidden until data loads */
+    .health-card--hidden {
+      display: none;
     }
 
     /* ─── Report Card ────────────────────────── */
@@ -267,12 +410,55 @@
       </nav>
     </header>
 
-    <!-- REPORT LIST -->
+    <!-- REPORT LIST (left) -->
     <div class="garden-content">
       <div class="report-list" id="report-list">
         <!-- Populated by JS -->
       </div>
     </div>
+
+    <!-- SIDEBAR (right) -->
+    <aside class="garden-sidebar">
+      <div>
+        <div class="sidebar-label">Garden Health</div>
+        <div class="health-card health-card--hidden" id="health-card">
+          <h2 class="health-card__title">Knowledge Index</h2>
+
+          <div class="health-coverage" id="health-coverage">
+            <div class="health-coverage__header">
+              <span class="health-coverage__label">Index coverage</span>
+              <span class="health-coverage__pct" id="health-pct">--</span>
+            </div>
+            <div class="health-coverage__bar">
+              <div class="health-coverage__fill" id="health-fill" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <div class="health-card__stats">
+            <div class="health-stat">
+              <span class="health-stat__value" id="health-total">--</span>
+              <span class="health-stat__label">Total files</span>
+            </div>
+            <div class="health-stat">
+              <span class="health-stat__value" id="health-indexed">--</span>
+              <span class="health-stat__label">Indexed</span>
+            </div>
+            <div class="health-stat">
+              <span class="health-stat__value" id="health-stale">--</span>
+              <span class="health-stat__label">Stale</span>
+            </div>
+            <div class="health-stat">
+              <span class="health-stat__value" id="health-orphan">--</span>
+              <span class="health-stat__label">Orphaned</span>
+            </div>
+          </div>
+
+          <div class="health-card__footer" id="health-footer">
+            Last indexed: --
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <script>
@@ -383,6 +569,74 @@
       return div.innerHTML;
     }
 
+    // ─── Health Card ──────────────────────────────────────
+
+    function renderHealth(data) {
+      const card = document.getElementById('health-card');
+      const pct = data.index_coverage_pct;
+
+      // Coverage percentage + bar
+      document.getElementById('health-pct').textContent = `${Math.round(pct)}%`;
+      const fill = document.getElementById('health-fill');
+      fill.style.width = '0%';
+
+      // Color the bar based on coverage level
+      fill.className = 'health-coverage__fill';
+      if (pct < 50) {
+        fill.classList.add('health-coverage__fill--danger');
+      } else if (pct < 80) {
+        fill.classList.add('health-coverage__fill--warn');
+      }
+
+      // Stats
+      document.getElementById('health-total').textContent = data.total_files;
+      document.getElementById('health-indexed').textContent = data.indexed_files;
+
+      const staleEl = document.getElementById('health-stale');
+      staleEl.textContent = data.stale_files;
+      staleEl.className = 'health-stat__value';
+      if (data.stale_files > 0) {
+        staleEl.classList.add(data.stale_files > 10 ? 'health-stat__value--danger' : 'health-stat__value--warn');
+      }
+
+      const orphanEl = document.getElementById('health-orphan');
+      orphanEl.textContent = data.orphan_files;
+      orphanEl.className = 'health-stat__value';
+      if (data.orphan_files > 0) {
+        orphanEl.classList.add(data.orphan_files > 10 ? 'health-stat__value--danger' : 'health-stat__value--warn');
+      }
+
+      // Last indexed timestamp
+      if (data.last_indexed) {
+        const ts = TrellisAPI.formatGardenTime(data.last_indexed, 'indexed');
+        document.getElementById('health-footer').textContent = `Last ${ts}`;
+      } else {
+        document.getElementById('health-footer').textContent = 'Never indexed';
+      }
+
+      // Reveal card
+      card.classList.remove('health-card--hidden');
+
+      // Animate entrance
+      gsap.from(card, {
+        opacity: 0,
+        x: 20,
+        duration: 0.4,
+        ease: 'power2.out',
+        delay: 0.3,
+      });
+
+      // Animate bar fill after card appears
+      requestAnimationFrame(() => {
+        gsap.to(fill, {
+          width: `${Math.min(pct, 100)}%`,
+          duration: 0.8,
+          ease: 'power2.out',
+          delay: 0.5,
+        });
+      });
+    }
+
     // ─── Initialize ────────────────────────────────────────
 
     async function init() {
@@ -398,13 +652,20 @@
       });
       gsap.from('.garden-content', {
         opacity: 0,
-        y: 20,
+        x: -20,
         duration: 0.5,
         ease: 'power2.out',
         delay: 0.15,
       });
+      gsap.from('.garden-sidebar', {
+        opacity: 0,
+        x: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+        delay: 0.2,
+      });
 
-      // Fetch gardener status
+      // Fetch gardener status (reports)
       try {
         const res = await fetch('/api/gardener/status');
         const data = await res.json();
@@ -412,6 +673,20 @@
       } catch (e) {
         console.warn('Failed to fetch gardener status:', e);
         renderReports([]);
+      }
+
+      // Fetch gardener health (index stats)
+      // 503 = knowledge_manager unavailable (standalone dev mode) — silently skip
+      try {
+        const res = await fetch('/api/gardener/health');
+        if (res.ok) {
+          const data = await res.json();
+          renderHealth(data);
+        } else if (res.status !== 503) {
+          console.warn('Gardener health returned', res.status);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch gardener health:', e);
       }
     }
 
