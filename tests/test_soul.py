@@ -23,6 +23,9 @@ def agents_dir(tmp_path):
         "## Personality\n\n"
         "- Direct and concise.\n"
         "- Uses garden metaphors.\n\n"
+        "## Response Quality\n\n"
+        "- Concrete over atmospheric.\n"
+        "- No filler.\n\n"
         "## Operating Modes\n\n"
         "### Co-op Mode\n"
         "- Collaborate in real-time\n\n"
@@ -94,6 +97,11 @@ class TestLoadSoulLocal:
     def test_condensed_includes_constraints(self, agents_dir):
         local = load_soul_local(agents_dir=agents_dir)
         assert "Never fabricate" in local
+
+    def test_condensed_includes_response_quality(self, agents_dir):
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "Concrete over atmospheric" in local
+        assert "No filler" in local
 
     def test_condensed_excludes_roles(self, agents_dir):
         local = load_soul_local(agents_dir=agents_dir)

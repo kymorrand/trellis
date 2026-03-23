@@ -51,7 +51,7 @@ def load_soul_local(agent_name: str = "ivy", agents_dir: str = "agents") -> str:
     sections = _extract_sections(full_soul)
 
     # Keep only the sections a small model can handle without hallucinating
-    keep = ["Identity", "Personality", "Constraints"]
+    keep = ["Identity", "Personality", "Response Quality", "Constraints"]
     parts = []
     for heading in keep:
         if heading in sections:
