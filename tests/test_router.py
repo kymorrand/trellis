@@ -100,6 +100,39 @@ class TestClassify:
         msg = "p1\n\np2\n\np3\n\np4"
         assert router.classify(msg) == "cloud"
 
+    # --- Tool-requiring keywords → cloud (Sonnet) ---
+
+    def test_dispatch_armando(self, router):
+        assert router.classify("Dispatch Armando to fix the bug") == "cloud"
+
+    def test_launch_armando(self, router):
+        assert router.classify("Launch armando") == "cloud"
+
+    def test_armando_mention(self, router):
+        assert router.classify("armando should handle this") == "cloud"
+
+    def test_search_the_vault(self, router):
+        assert router.classify("Can you search the vault for Kyle's notes?") == "cloud"
+
+    def test_save_to_vault(self, router):
+        assert router.classify("save to vault this conversation") == "cloud"
+
+    def test_execute_shell(self, router):
+        assert router.classify("Execute this shell command") == "cloud"
+
+    def test_run_command(self, router):
+        assert router.classify("run command to check disk space") == "cloud"
+
+    def test_shell_keyword(self, router):
+        assert router.classify("open a shell and check logs") == "cloud"
+
+    def test_dispatch_keyword(self, router):
+        assert router.classify("dispatch the task now") == "cloud"
+
+    def test_yes_still_local(self, router):
+        """Short follow-ups like 'yes' should stay local — not a bug."""
+        assert router.classify("yes") == "local"
+
     # --- Edge cases ---
 
     def test_keyword_at_word_boundary(self, router):

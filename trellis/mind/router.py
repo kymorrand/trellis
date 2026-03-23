@@ -48,7 +48,10 @@ COSTS = {
 SONNET_KEYWORDS = re.compile(
     r"\b(architect|refactor|debug|strategy|strategize|"
     r"pros\s+and\s+cons|trade.?offs?|compare\s+and\s+contrast|"
-    r"code\s+review|security\s+audit|design\s+system)\b",
+    r"code\s+review|security\s+audit|design\s+system|"
+    r"armando|dispatch|launch\s+armando|"
+    r"search\s+the\s+vault|save\s+to\s+vault|"
+    r"run\s+command|execute|shell)\b",
     re.IGNORECASE,
 )
 
