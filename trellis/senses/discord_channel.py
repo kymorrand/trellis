@@ -9,7 +9,7 @@ Features:
     - Journal logging of every interaction
     - Vault search and save operations
     - Per-channel conversation history
-    - /status command for on-demand status reports
+    - /status command for on-demand status report
     - Heartbeat integration for background tasks
 
 Security: Only processes messages from Kyle's Discord user ID.
@@ -34,7 +34,7 @@ from trellis.hands.vault import (
 )
 from trellis.memory.journal import log_entry
 from trellis.mind.router import ModelRouter, RouteResult
-from trellis.mind.soul import load_soul, load_soul_local
+from trellis.mind.soul import load_kyle, load_kyle_local, load_soul, load_soul_local
 from trellis.security.audit import log_action
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,14 @@ class IvyDiscordBot(discord.Client):
         if not self.system_prompt:
             raise ValueError("Failed to load SOUL.md — cannot start without personality")
         self.local_system_prompt = load_soul_local(agents_dir=agents_dir)
+
+        # Load Kyle's context model — append to system prompts
+        kyle_context = load_kyle(vault_path)
+        if kyle_context:
+            self.system_prompt += "\n\n---\n\n" + kyle_context
+        kyle_context_local = load_kyle_local(vault_path)
+        if kyle_context_local:
+            self.local_system_prompt += "\n\n---\n\n" + kyle_context_local
 
         # Model router
         self.router = ModelRouter(

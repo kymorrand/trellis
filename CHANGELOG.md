@@ -18,6 +18,13 @@ Ivy gains semantic understanding of the vault, the runtime gets fully async plum
 - **Async Vault Backup** — Nightly backup replaced inline `subprocess.run` with async `vault_backup()` from `trellis/hands/github_client.py` (uses `asyncio.create_subprocess_exec` with pre-push secret scanning). Discord alerts on failure or exception.
 - **Approval Queue Wiring** — `ApprovalQueue` connected to `ToolExecutor` and `AgentBrain`. When the permission system returns ASK, a queue item is created with tool name, input summary, and context instead of soft-denying. Works with or without queue (backward compatible).
 
+### Kyle Context Model (MOR-20)
+
+- **`load_kyle(vault_path)`** (`trellis/mind/soul.py`) — Loads `_ivy/kyle.md` at startup and appends to system prompt after SOUL.md. Kyle's professional context model — energy architecture, communication preferences, working methodology, relationship expectations.
+- **`load_kyle_local(vault_path)`** — Condensed version for local models. Extracts only: Energy Architecture, Weekly Operating Framework, Communication Preferences, and What Ivy Should Know About the Relationship (contains Good/Bad/Great). Same grounding rule as `load_soul_local()`.
+- **Discord + CLI** — Both senses load kyle.md at startup. Full version appended for Claude, condensed for Ollama. No changes needed in `AgentBrain` — receives the already-assembled prompt.
+- kyle.md stays in `_ivy/` (excluded from vault search by design). Loaded explicitly, not discovered.
+
 ### Garden Page (`/garden`)
 
 - **Gardener Activity** (`trellis/static/garden.html`) — 1920x1080 kiosk display showing Armando's development reports. Two-column layout: scrollable report list (left) + health sidebar (right).
