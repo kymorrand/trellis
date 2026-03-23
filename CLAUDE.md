@@ -188,3 +188,6 @@ any new CLAUDE.md rules. If no rules were added, the section says "None — clea
   Merges can silently drop imports when both branches modify the same file. Sprint 1 lost `import re` and `import os` on first merge.
 - When using `git merge -X theirs` or `-X ours` to resolve conflicts, always verify that imports from the OTHER branch survived. These strategies keep one side's content but can drop the other side's additions to shared sections like import blocks.
 - Don't forget to activate the venv before running any Python commands on Greenhouse: `source ~/projects/trellis/.venv/bin/activate`
+- When adding new sections to SOUL.md, update `load_soul_local()` in `trellis/mind/soul.py` — the `keep` list controls which sections the local model sees. If you add a section to SOUL.md and don't add it to `keep`, local model behavior won't change. (Sprint 3: Response Quality section was invisible to qwen3 until fixed.)
+- Never launch Ivy via `nohup python scripts/run_discord.py &` — always use `sudo systemctl restart trellis.service`. Rogue nohup processes survive restarts and create duplicate bot connections to Discord. (Sprint 3: zombie process caused every message to get two replies.)
+- After restarting Ivy's service, always verify single-instance: `ps aux | grep run_discord | grep -v grep` should show exactly one Python process.
