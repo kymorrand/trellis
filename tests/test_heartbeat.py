@@ -159,7 +159,7 @@ class TestHeartbeatScheduler:
         assert len(journals) >= 1
         content = journals[0].read_text(encoding="utf-8")
         assert "HEARTBEAT_INBOX" in content
-        assert "1 items detected" in content
+        assert "processed 1 drop(s) into items" in content
 
     @pytest.mark.asyncio
     async def test_inbox_check_empty(self, tmp_path):
