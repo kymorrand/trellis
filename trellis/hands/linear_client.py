@@ -141,6 +141,69 @@ class LinearClient:
             raise RuntimeError("Failed to create Linear issue")
         return result.get("issue", {})
 
+    async def update_issue_state(self, issue_id: str, state_id: str) -> dict:
+        """Update an issue's workflow state.
+
+        Args:
+            issue_id: The Linear issue ID to update.
+            state_id: The target workflow state ID.
+
+        Returns:
+            Updated issue dict with id, identifier, title, and state.
+
+        Raises:
+            RuntimeError: If the mutation fails or Linear returns an error.
+        """
+        query = """
+        mutation($issueId: String!, $stateId: String!) {
+            issueUpdate(id: $issueId, input: { stateId: $stateId }) {
+                success
+                issue {
+                    id
+                    identifier
+                    title
+                    state { name type }
+                }
+            }
+        }
+        """
+        data = await self._query(
+            query, variables={"issueId": issue_id, "stateId": state_id}
+        )
+        result = data.get("issueUpdate", {})
+        if not result.get("success"):
+            raise RuntimeError("Failed to update Linear issue state")
+        return result.get("issue", {})
+
+    async def get_workflow_states(self, team_id: str) -> list[dict]:
+        """Get available workflow states for a team.
+
+        Args:
+            team_id: The Linear team ID.
+
+        Returns:
+            List of state dicts with id, name, type, and position.
+        """
+        query = """
+        query($teamId: String!) {
+            team(id: $teamId) {
+                states {
+                    nodes {
+                        id
+                        name
+                        type
+                        position
+                    }
+                }
+            }
+        }
+        """
+        data = await self._query(query, variables={"teamId": team_id})
+        team = data.get("team")
+        if not team:
+            return []
+        return team.get("states", {}).get("nodes", [])
+
     async def get_projects(self, limit: int = 10) -> list[dict]:
         """Get active projects."""
         query = """
