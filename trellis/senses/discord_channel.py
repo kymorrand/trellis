@@ -459,8 +459,18 @@ class IvyDiscordBot(discord.Client):
         reply_with_indicator = f"{result.response}\n\n-# {result.indicator}"
 
         # Discord has a 2000 char limit — split if needed
-        for chunk in _split_message(reply_with_indicator):
+        chunks = _split_message(reply_with_indicator)
+        for chunk in chunks:
             await message.channel.send(chunk)
+
+        # If message was split, note it so the model knows the user saw
+        # multiple messages and can properly continue if asked
+        if len(chunks) > 1:
+            result.response += (
+                f"\n\n[This response was split across {len(chunks)} Discord messages "
+                f"due to the 2000-character limit. If the user asks you to continue, "
+                f"pick up exactly where you left off.]"
+            )
 
         # Journal: log Ivy's response
         cost_note = f" (${result.cost_usd:.4f})" if result.cost_usd > 0 else ""

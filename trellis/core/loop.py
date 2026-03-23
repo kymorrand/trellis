@@ -486,7 +486,9 @@ class ToolExecutor:
             f"--max-budget-usd 5 --no-session-persistence"
         )
 
-        result = await execute_command(cmd, cwd=project_dir, timeout=1800)
+        result = await execute_command(
+            cmd, cwd=project_dir, timeout=1800, skip_validation=True,
+        )
         return result
 
     def _journal_read(self, tool_input: dict) -> str:

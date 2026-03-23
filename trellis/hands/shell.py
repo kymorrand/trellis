@@ -104,23 +104,29 @@ def validate_command(command: str) -> str | None:
 
 
 async def execute_command(
-    command: str, cwd: str | None = None, timeout: int = TIMEOUT
+    command: str,
+    cwd: str | None = None,
+    timeout: int = TIMEOUT,
+    skip_validation: bool = False,
 ) -> str:
-    """Execute a whitelisted shell command with timeout and output limits.
+    """Execute a shell command with timeout and output limits.
 
     Args:
         command: The shell command to execute.
         cwd: Working directory (defaults to vault path).
         timeout: Command timeout in seconds (default 30).
+        skip_validation: Skip whitelist validation for trusted internal commands
+            (e.g., armando_dispatch which constructs its own safe command).
 
     Returns:
         Command output (stdout + stderr), truncated if needed.
     """
-    # Validate
-    error = validate_command(command)
-    if error:
-        logger.warning(f"Shell command blocked: {command!r} — {error}")
-        return error
+    # Validate (unless caller is a trusted internal path)
+    if not skip_validation:
+        error = validate_command(command)
+        if error:
+            logger.warning(f"Shell command blocked: {command!r} — {error}")
+            return error
 
     logger.info(f"Shell executing: {command}")
 
