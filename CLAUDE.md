@@ -81,9 +81,9 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 
 ## Agent Scope Boundaries
 
-### Thorn (PM) — Read everything, write to reports/queue/CLAUDE.md only
-- Reads: git log, test results, `_ivy/reports/`, all source code
-- Writes: `_ivy/reports/`, `_ivy/queue/`, CLAUDE.md "What NOT to Do" section
+### Thorn (PM) — Read everything, write to reports/queue/CLAUDE.md/Linear
+- Reads: git log, test results, `_ivy/reports/`, all source code, Linear board
+- Writes: `_ivy/reports/`, `_ivy/queue/`, CLAUDE.md "What NOT to Do" section, Linear (create, update status, assign scope)
 - NEVER modifies source code in `trellis/` or `agents/ivy/SOUL.md`
 
 ### Bloom (Frontend) — `trellis/static/` + `trellis/senses/web.py` only
