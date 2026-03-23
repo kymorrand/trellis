@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -163,6 +163,32 @@ class TestHeartbeatScheduler:
         assert "Vault:" in call_arg
 
     @pytest.mark.asyncio
+    async def test_morning_brief_with_vault_health(self, vault):
+        """Morning brief with knowledge_manager includes health stats."""
+        discord_post = AsyncMock()
+        mock_km = MagicMock()
+        mock_km.vault_health = AsyncMock(return_value={
+            "total_files": 142,
+            "indexed_files": 138,
+            "stale_files": 3,
+            "orphan_files": 7,
+            "last_indexed": "2026-03-22T14:30:00",
+            "index_coverage_pct": 97.2,
+        })
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            knowledge_manager=mock_km,
+        )
+        await hb._morning_brief(datetime.now())
+        discord_post.assert_called_once()
+        call_arg = discord_post.call_args[0][0]
+        assert "142 files" in call_arg
+        assert "138 indexed" in call_arg
+        assert "3 stale" in call_arg
+        assert "7 orphans" in call_arg
+
+    @pytest.mark.asyncio
     async def test_end_of_day(self, heartbeat, vault):
         """EOD summary should post to Discord."""
         await heartbeat._end_of_day(datetime.now())
@@ -190,17 +216,58 @@ class TestHeartbeatScheduler:
         assert heartbeat._count_vault_files() == 2
 
     @pytest.mark.asyncio
-    async def test_nightly_backup_logs_on_error(self, vault):
-        """Backup should log failure and alert Discord when git fails."""
+    async def test_nightly_backup_calls_vault_backup(self, vault):
+        """Nightly backup should use async github_client.vault_backup."""
         discord_post = AsyncMock()
         hb = HeartbeatScheduler(
-            vault_path=vault / "nonexistent",
+            vault_path=vault,
             discord_post_callback=discord_post,
         )
-        await hb._nightly_backup()
-        discord_post.assert_called_once()
-        call_arg = discord_post.call_args[0][0]
-        assert "🚨" in call_arg
+        with patch(
+            "trellis.core.heartbeat.vault_backup",
+            new_callable=AsyncMock,
+            return_value="Vault backup complete: Nightly backup 2026-03-22",
+        ) as mock_backup:
+            await hb._nightly_backup()
+            mock_backup.assert_awaited_once_with(vault)
+            # Should NOT alert Discord on success
+            discord_post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_nightly_backup_alerts_on_failure(self, vault):
+        """Nightly backup should alert Discord when vault_backup reports failure."""
+        discord_post = AsyncMock()
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+        )
+        with patch(
+            "trellis.core.heartbeat.vault_backup",
+            new_callable=AsyncMock,
+            return_value="Vault backup: push failed — remote rejected",
+        ):
+            await hb._nightly_backup()
+            discord_post.assert_called_once()
+            call_arg = discord_post.call_args[0][0]
+            assert "push failed" in call_arg
+
+    @pytest.mark.asyncio
+    async def test_nightly_backup_alerts_on_exception(self, vault):
+        """Nightly backup should alert Discord when vault_backup raises."""
+        discord_post = AsyncMock()
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+        )
+        with patch(
+            "trellis.core.heartbeat.vault_backup",
+            new_callable=AsyncMock,
+            side_effect=OSError("disk full"),
+        ):
+            await hb._nightly_backup()
+            discord_post.assert_called_once()
+            call_arg = discord_post.call_args[0][0]
+            assert "disk full" in call_arg
 
     @pytest.mark.asyncio
     async def test_tick_increments_counter(self, heartbeat):

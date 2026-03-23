@@ -19,7 +19,8 @@ API:
     /api/queue/{id}/approve  — Approve an item (POST)
     /api/queue/{id}/dismiss  — Dismiss an item (POST)
     /api/brief               — Aggregated morning brief data
-    /api/gardener/status     — Armando's development activity reports
+    /api/gardener/status     — Armando agent status reports
+    /api/gardener/health     — Vault health stats (indexing, stale, orphans)
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
     from trellis.core.heartbeat import HeartbeatScheduler
     from trellis.core.queue import ApprovalQueue
+    from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,7 @@ def create_app(
     agent_state: AgentState | None = None,
     queue: ApprovalQueue | None = None,
     config: dict | None = None,
+    knowledge_manager: KnowledgeManager | None = None,
 ) -> FastAPI:
     """Create the FastAPI application with API endpoints."""
     app = FastAPI(title="Trellis", docs_url=None, redoc_url=None)
@@ -546,12 +549,22 @@ def create_app(
             if parsed is not None:
                 reports.append(parsed)
 
-        # Sort: newest date first, then alphabetical by agent
-        reports.sort(key=lambda r: (-r["date"].replace("-", "").zfill(8).__hash__(), r["agent"]))
-        # Proper sort: date descending, agent ascending
+        # Sort: date descending, agent ascending
+        # (two stable sorts — Python's sort is stable, so this works correctly)
         reports.sort(key=lambda r: r["agent"])
         reports.sort(key=lambda r: r["date"], reverse=True)
 
         return {"reports": reports}
+
+    # ─── API: Gardener Health ─────────────────────────────────────
+
+    @app.get("/api/gardener/health")
+    async def api_gardener_health():
+        """Vault health stats: indexing coverage, stale files, orphans."""
+        if not knowledge_manager:
+            raise HTTPException(503, "Knowledge manager not available")
+
+        health = await knowledge_manager.vault_health()
+        return health
 
     return app

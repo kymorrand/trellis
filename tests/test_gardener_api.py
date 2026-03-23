@@ -1,9 +1,11 @@
-"""Tests for GET /api/gardener/status endpoint."""
+"""Tests for GET /api/gardener/status and GET /api/gardener/health endpoints."""
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 
 from trellis.senses.web import create_app
@@ -202,3 +204,64 @@ class TestGardenerStatusEndpoint:
         assert r["agent"] == "root"
         assert r["title"] == ""
         assert r["summary"] == ""
+
+
+class TestGardenerHealthEndpoint:
+    """Tests for GET /api/gardener/health."""
+
+    def test_returns_503_without_knowledge_manager(self, vault_tmp: Path) -> None:
+        """Without knowledge_manager, endpoint returns 503."""
+        app = create_app(config={"vault_path": vault_tmp})
+        client = TestClient(app)
+        resp = client.get("/api/gardener/health")
+        assert resp.status_code == 503
+
+    def test_returns_health_stats(self, vault_tmp: Path) -> None:
+        """With knowledge_manager, returns health stats dict."""
+        mock_km = MagicMock()
+        mock_km.vault_health = AsyncMock(return_value={
+            "total_files": 142,
+            "indexed_files": 138,
+            "stale_files": 3,
+            "orphan_files": 7,
+            "last_indexed": "2026-03-22T14:30:00",
+            "index_coverage_pct": 97.2,
+        })
+        app = create_app(
+            config={"vault_path": vault_tmp},
+            knowledge_manager=mock_km,
+        )
+        client = TestClient(app)
+        resp = client.get("/api/gardener/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_files"] == 142
+        assert data["indexed_files"] == 138
+        assert data["stale_files"] == 3
+        assert data["orphan_files"] == 7
+        assert data["last_indexed"] == "2026-03-22T14:30:00"
+        assert data["index_coverage_pct"] == 97.2
+
+    def test_health_response_matches_contract(self, vault_tmp: Path) -> None:
+        """Response has all expected keys from the API contract."""
+        mock_km = MagicMock()
+        mock_km.vault_health = AsyncMock(return_value={
+            "total_files": 0,
+            "indexed_files": 0,
+            "stale_files": 0,
+            "orphan_files": 0,
+            "last_indexed": None,
+            "index_coverage_pct": 0.0,
+        })
+        app = create_app(
+            config={"vault_path": vault_tmp},
+            knowledge_manager=mock_km,
+        )
+        client = TestClient(app)
+        resp = client.get("/api/gardener/health")
+        data = resp.json()
+        expected_keys = {
+            "total_files", "indexed_files", "stale_files",
+            "orphan_files", "last_indexed", "index_coverage_pct",
+        }
+        assert set(data.keys()) == expected_keys

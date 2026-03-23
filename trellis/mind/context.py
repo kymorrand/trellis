@@ -5,16 +5,25 @@ Assembles the right context for each inference call.
 On every non-trivial message, automatically extracts keywords and searches
 the vault for relevant knowledge to include as context.
 
+Supports hybrid search (keyword + vector) when a KnowledgeManager is available,
+falling back to keyword-only search otherwise.
+
 This makes Ivy contextually aware of the vault without Kyle having to
 say "check the vault" — mentions of people, projects, or concepts
 automatically pull in relevant vault knowledge.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from trellis.hands.vault import format_search_results, search_vault
+
+if TYPE_CHECKING:
+    from trellis.memory.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -114,16 +123,24 @@ def should_auto_search(message: str) -> bool:
     return True
 
 
-def auto_context(vault_path: Path, message: str) -> str:
+async def auto_context(
+    vault_path: Path,
+    message: str,
+    knowledge_manager: KnowledgeManager | None = None,
+) -> str:
     """Automatically search the vault for context relevant to a message.
 
     This is the main entry point for auto-context assembly. Call it on
     every incoming message — it will decide whether to search and what
     to return.
 
+    When a KnowledgeManager is provided, uses hybrid search (keyword + vector).
+    Otherwise falls back to keyword-only search.
+
     Args:
         vault_path: Path to the Obsidian vault.
         message: The user's message.
+        knowledge_manager: Optional KnowledgeManager for hybrid search.
 
     Returns:
         Formatted vault search results, or empty string if nothing relevant.
@@ -135,8 +152,24 @@ def auto_context(vault_path: Path, message: str) -> str:
     if not keywords:
         return ""
 
-    # Search with the keywords joined as a query
     query = " ".join(keywords)
+
+    # Use hybrid search if knowledge manager is available
+    if knowledge_manager is not None:
+        try:
+            results = await knowledge_manager.search(query, limit=MAX_CONTEXT_RESULTS)
+            if results:
+                formatted = format_search_results(results)
+                logger.info(
+                    "Auto-context (hybrid): keywords=%s, results=%d",
+                    keywords,
+                    len(results),
+                )
+                return formatted
+        except Exception:
+            logger.warning("Hybrid search failed, falling back to keyword search", exc_info=True)
+
+    # Fallback: keyword-only search
     results = search_vault(vault_path, query, max_results=MAX_CONTEXT_RESULTS)
 
     if not results:
@@ -150,7 +183,9 @@ def auto_context(vault_path: Path, message: str) -> str:
 
     formatted = format_search_results(relevant)
     logger.info(
-        f"Auto-context: keywords={keywords}, "
-        f"results={len(relevant)} relevant of {len(results)} total"
+        "Auto-context (keyword): keywords=%s, results=%d relevant of %d total",
+        keywords,
+        len(relevant),
+        len(results),
     )
     return formatted
