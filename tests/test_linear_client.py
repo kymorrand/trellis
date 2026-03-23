@@ -1,11 +1,14 @@
-"""Tests for trellis.hands.linear_client — Linear API client."""
+"""Tests for trellis.hands.linear_client — Linear API client and loop integration."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import os
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from trellis.core.loop import TOOL_DEFINITIONS, ToolExecutor
 from trellis.hands.linear_client import LinearClient, format_issues
 
 
@@ -147,3 +150,168 @@ class TestFormatIssues:
         result = format_issues(issues)
         assert "[Trellis]" in result
         assert "Kyle" in result
+
+
+# --- Loop Integration Tests: linear_read and linear_search ----------------
+
+
+class TestLinearToolDefinitions:
+    """Verify linear_read and linear_search are in TOOL_DEFINITIONS."""
+
+    def test_linear_read_in_tool_definitions(self) -> None:
+        names = [t["name"] for t in TOOL_DEFINITIONS]
+        assert "linear_read" in names
+
+    def test_linear_search_in_tool_definitions(self) -> None:
+        names = [t["name"] for t in TOOL_DEFINITIONS]
+        assert "linear_search" in names
+
+    def test_linear_read_has_required_fields(self) -> None:
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "linear_read")
+        assert "description" in tool
+        assert "input_schema" in tool
+        assert tool["input_schema"]["type"] == "object"
+
+    def test_linear_search_has_required_fields(self) -> None:
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "linear_search")
+        assert "description" in tool
+        assert "input_schema" in tool
+        assert "query" in tool["input_schema"].get("required", [])
+
+
+class TestLinearPermissionMapping:
+    """Verify permission keys map correctly for Linear tools."""
+
+    @pytest.fixture()
+    def executor(self, tmp_path: Path) -> ToolExecutor:
+        return ToolExecutor(vault_path=tmp_path)
+
+    def test_linear_read_permission_key(self, executor: ToolExecutor) -> None:
+        assert executor._permission_key("linear_read", {}) == "linear_morrandmore_read"
+
+    def test_linear_search_permission_key(self, executor: ToolExecutor) -> None:
+        assert executor._permission_key("linear_search", {}) == "linear_morrandmore_read"
+
+
+class TestLinearReadHandler:
+    """Tests for ToolExecutor._linear_read handler."""
+
+    @pytest.fixture()
+    def executor_with_linear(self, tmp_path: Path) -> ToolExecutor:
+        """Create a ToolExecutor with a mocked LinearClient."""
+        executor = ToolExecutor(vault_path=tmp_path)
+        executor.linear_client = MagicMock()
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_linear_read_returns_formatted_issues(
+        self, executor_with_linear: ToolExecutor
+    ) -> None:
+        """linear_read calls get_team_issues and returns formatted output."""
+        mock_issues = [
+            {
+                "identifier": "MOR-10",
+                "title": "Wire Linear into loop",
+                "state": {"name": "In Progress", "type": "started"},
+                "priority": 2,
+                "project": {"name": "Trellis"},
+                "assignee": {"name": "Root"},
+            }
+        ]
+        executor_with_linear.linear_client.get_team_issues = AsyncMock(
+            return_value=mock_issues
+        )
+        result = await executor_with_linear._linear_read({"limit": 5})
+        assert "MOR-10" in result
+        assert "Wire Linear into loop" in result
+        executor_with_linear.linear_client.get_team_issues.assert_awaited_once_with(
+            "MOR", limit=5
+        )
+
+    @pytest.mark.asyncio
+    async def test_linear_read_default_limit(
+        self, executor_with_linear: ToolExecutor
+    ) -> None:
+        """linear_read uses default limit of 20 when not specified."""
+        executor_with_linear.linear_client.get_team_issues = AsyncMock(
+            return_value=[]
+        )
+        await executor_with_linear._linear_read({})
+        executor_with_linear.linear_client.get_team_issues.assert_awaited_once_with(
+            "MOR", limit=20
+        )
+
+    @pytest.mark.asyncio
+    async def test_linear_read_no_client(self, tmp_path: Path) -> None:
+        """Returns helpful message when Linear is not configured."""
+        env_without_key = {
+            k: v for k, v in os.environ.items()
+            if k != "IVY_LINEAR_API_KEY_MORRANDMORE"
+        }
+        with patch.dict(os.environ, env_without_key, clear=True):
+            executor = ToolExecutor(vault_path=tmp_path)
+        result = await executor._linear_read({})
+        assert "not configured" in result.lower()
+
+
+class TestLinearSearchHandler:
+    """Tests for ToolExecutor._linear_search handler."""
+
+    @pytest.fixture()
+    def executor_with_linear(self, tmp_path: Path) -> ToolExecutor:
+        """Create a ToolExecutor with a mocked LinearClient."""
+        executor = ToolExecutor(vault_path=tmp_path)
+        executor.linear_client = MagicMock()
+        return executor
+
+    @pytest.mark.asyncio
+    async def test_linear_search_returns_formatted_issues(
+        self, executor_with_linear: ToolExecutor
+    ) -> None:
+        """linear_search calls search_issues and returns formatted output."""
+        mock_issues = [
+            {
+                "identifier": "MOR-28",
+                "title": "Wire Linear client into loop",
+                "state": {"name": "Todo", "type": "unstarted"},
+                "priority": 3,
+                "project": None,
+                "assignee": None,
+            }
+        ]
+        executor_with_linear.linear_client.search_issues = AsyncMock(
+            return_value=mock_issues
+        )
+        result = await executor_with_linear._linear_search(
+            {"query": "Linear", "limit": 5}
+        )
+        assert "MOR-28" in result
+        assert "Wire Linear client into loop" in result
+        executor_with_linear.linear_client.search_issues.assert_awaited_once_with(
+            "Linear", limit=5
+        )
+
+    @pytest.mark.asyncio
+    async def test_linear_search_default_limit(
+        self, executor_with_linear: ToolExecutor
+    ) -> None:
+        """linear_search uses default limit of 10 when not specified."""
+        executor_with_linear.linear_client.search_issues = AsyncMock(
+            return_value=[]
+        )
+        await executor_with_linear._linear_search({"query": "test"})
+        executor_with_linear.linear_client.search_issues.assert_awaited_once_with(
+            "test", limit=10
+        )
+
+    @pytest.mark.asyncio
+    async def test_linear_search_no_client(self, tmp_path: Path) -> None:
+        """Returns helpful message when Linear is not configured."""
+        env_without_key = {
+            k: v for k, v in os.environ.items()
+            if k != "IVY_LINEAR_API_KEY_MORRANDMORE"
+        }
+        with patch.dict(os.environ, env_without_key, clear=True):
+            executor = ToolExecutor(vault_path=tmp_path)
+        result = await executor._linear_search({"query": "test"})
+        assert "not configured" in result.lower()
