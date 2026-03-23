@@ -19,6 +19,12 @@
       padding-bottom: var(--space-24);
     }
 
+    .brief-nav {
+      display: flex;
+      justify-content: center;
+      padding: var(--space-3) 0 var(--space-2);
+    }
+
     .brief-header {
       display: flex;
       flex-direction: column;
@@ -169,6 +175,14 @@
 </head>
 <body>
   <div class="brief">
+    <nav class="brief-nav trellis-nav">
+      <a href="/" class="trellis-nav__link">Canvas</a>
+      <span class="trellis-nav__sep"></span>
+      <a href="/brief" class="trellis-nav__link trellis-nav__link--active">Brief</a>
+      <span class="trellis-nav__sep"></span>
+      <a href="/garden" class="trellis-nav__link">Garden</a>
+    </nav>
+
     <header class="brief-header">
       <h1 class="brief-header__greeting" id="greeting">Good morning, Kyle</h1>
       <div class="brief-header__date" id="header-date">--</div>

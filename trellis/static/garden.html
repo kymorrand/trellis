@@ -55,6 +55,12 @@
       padding: var(--space-4) var(--space-6);
     }
 
+    .garden-header__left {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-6);
+    }
+
     .garden-header__title {
       font-family: var(--font-display);
       font-weight: var(--fraunces-weight);
@@ -69,26 +75,6 @@
       font-size: var(--text-md);
       color: var(--color-earth-light);
       font-weight: 400;
-    }
-
-    .garden-header__nav {
-      display: flex;
-      gap: var(--space-3);
-      align-items: center;
-    }
-
-    .garden-header__nav a {
-      font-family: var(--font-body);
-      font-size: var(--text-sm);
-      color: var(--color-earth-light);
-      text-decoration: none;
-      padding: var(--space-1) var(--space-3);
-      border-radius: var(--radius-sm);
-      transition: color 150ms ease-out, background 150ms ease-out;
-    }
-    .garden-header__nav a:hover {
-      color: var(--color-earth);
-      background: var(--color-cloud-dim);
     }
 
     /* ─── Report List (left column) ──────────── */
@@ -399,15 +385,19 @@
   <div class="garden-page">
     <!-- HEADER -->
     <header class="garden-header">
-      <div>
-        <h1 class="garden-header__title">The Garden</h1>
-        <p class="garden-header__subtitle">Armando's Activity</p>
+      <div class="garden-header__left">
+        <div>
+          <h1 class="garden-header__title">The Garden</h1>
+          <p class="garden-header__subtitle">Armando's Activity</p>
+        </div>
+        <nav class="trellis-nav">
+          <a href="/" class="trellis-nav__link">Canvas</a>
+          <span class="trellis-nav__sep"></span>
+          <a href="/brief" class="trellis-nav__link">Brief</a>
+          <span class="trellis-nav__sep"></span>
+          <a href="/garden" class="trellis-nav__link trellis-nav__link--active">Garden</a>
+        </nav>
       </div>
-      <nav class="garden-header__nav">
-        <a href="/">Canvas</a>
-        <a href="/brief">Brief</a>
-        <a href="/garden" style="color: var(--color-earth); font-weight: 600;">Garden</a>
-      </nav>
     </header>
 
     <!-- REPORT LIST (left) -->
