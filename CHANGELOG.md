@@ -136,6 +136,27 @@ Ivy can now launch Armando (The Gardener) for development work — the bridge be
 
 ---
 
+## 2026-03-23 — Start Screen + Navigation Restructure
+
+Trellis gets a proper front door. A new Start screen becomes the default landing page, and the Canvas moves to `/canvas`.
+
+### Start Screen (`/`)
+
+- **`trellis/static/start.html`** — New phone-first landing page with warm solarpunk aesthetic. Time-aware greeting (morning/afternoon/evening), live agent state via SSE, and intentional pathways to Canvas, Brief, and Garden with descriptions.
+- Film grain overlay (feTurbulence at 30% opacity, multiply blend) on circadian-driven warm cream gradient background. Content floats directly on background — no transparent overlay boxes.
+- GSAP entrance animations: staggered fade-up on nav, hero, pathways, and footer.
+- Queue count badge on Brief pathway shows pending approval items.
+- Circadian system initialized for time-of-day typography and color shifts.
+
+### Navigation Restructure
+
+- **All pages** updated with four-link nav: Start, Canvas, Brief, Garden (previously three links: Canvas, Brief, Garden).
+- `/` now serves Start screen (was Canvas).
+- `/canvas` now serves Canvas (was `/`).
+- `/brief` and `/garden` unchanged.
+
+---
+
 ## 2026-03-22 — Sprint 2: Semantic Search, Gardener Activity, Vault Health
 
 Ivy gains semantic understanding of the vault, the runtime gets fully async plumbing, and Armando gets a face — the new `/garden` page shows what the dev team has been doing.
