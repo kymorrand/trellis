@@ -15,7 +15,7 @@ Kyle can refer to the system as "Armando" the same way he refers to "Ivy" — on
 - **Bloom** (Frontend) — Builds the visible layer: UI, design system, web interface.
 - **Root** (Backend) — Builds the foundation: runtime, memory, security, integrations.
 
-Agent definitions: `.claude/agents/thorn.md`, `bloom.md`, `root.md`
+Agent definitions: `~/.claude/agents/thorn.md`, `bloom.md`, `root.md` (user-level, project-agnostic)
 
 ## Architecture
 - `trellis/core/` — Event loop (`loop.py` — ReAct agent brain), heartbeat scheduler, state, config, approval queue
@@ -132,6 +132,34 @@ This means mentioning people, projects, or concepts pulls in vault knowledge wit
 
 ## Companion Repo
 - kymorrand/ivy-vault (private) — Obsidian vault knowledge base at ~/projects/ivy-vault
+
+## Improvement Process (Armando)
+
+Armando (The Gardener) is the multi-agent dev team that works on this project.
+Thorn (PM) is the lead agent. Bloom (frontend) and Root (backend) are subagents.
+Agent definitions live at ~/.claude/agents/ (user-level, project-agnostic).
+
+### How Mistakes Compound Into Rules
+
+1. **Thorn catches it:** After every dispatch, Thorn reviews Bloom/Root's work.
+   Violations get added to "What NOT to Do" below and a Linear issue gets created.
+2. **Kyle catches it:** Kyle reviews garden reports after sessions. Additional rules
+   get added via Thorn in the next session.
+3. **Periodic review:** Kyle and his Claude project partner review CLAUDE.md weekly
+   to prune, consolidate, and promote recurring rules into agent definitions.
+
+### Garden Report Format
+
+Thorn writes a garden report to `_ivy/reports/garden-report-{date}.md` after every
+session. The report MUST end with a section called "Rules Added This Session" listing
+any new CLAUDE.md rules. If no rules were added, the section says "None — clean session."
+
+### Reporting Directories
+
+- Sprint plans: `_ivy/reports/sprint-current.md`
+- Status reports: `_ivy/reports/status-{agent}-{date}.md`
+- Garden reports: `_ivy/reports/garden-report-{date}.md`
+- Items needing Kyle: `_ivy/queue/`
 
 ## What NOT to Do
 <!-- This section grows over time. Every mistake becomes a rule. -->
