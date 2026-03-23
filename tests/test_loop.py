@@ -261,7 +261,7 @@ class TestToolExecutor:
             assert "--agent thorn" in cmd
             assert "-p" in cmd
             assert "Fix the bug in loop.py" in cmd
-            assert "--max-budget-usd 5" in cmd
+            assert "--max-budget-usd 15" in cmd
             assert "--no-session-persistence" in cmd
             assert call_args[1]["cwd"] == str(tmp_path)
             assert call_args[1]["timeout"] == 1800

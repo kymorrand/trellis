@@ -483,7 +483,7 @@ class ToolExecutor:
         cmd = (
             f"{claude_path} --dangerously-skip-permissions --agent thorn "
             f"-p {shlex.quote(message)} "
-            f"--max-budget-usd 5 --no-session-persistence"
+            f"--max-budget-usd 15 --no-session-persistence"
         )
 
         result = await execute_command(
