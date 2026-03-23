@@ -332,6 +332,46 @@ class IvyDiscordBot(discord.Client):
             log_entry(self.vault_path, "COMMAND", f"Denied queue item: {item_id}")
             return
 
+        # !catch-up command — context briefing using tools
+        if content.lower().strip() == "!catch-up":
+            catchup_prompt = (
+                "Give me a concise catch-up briefing. Use your tools:\n"
+                "1. Run: git -C /home/kyle/projects/trellis log --oneline -20\n"
+                "2. Run: ls -lt _ivy/reports/ | head -15\n"
+                "3. Read the most recent garden report (use vault_read with the path from step 2)\n"
+                "4. Run: ls _ivy/queue/ (check for pending approval items)\n"
+                "5. Summarize: what shipped recently, what's pending, what needs Kyle's input.\n"
+                "Be concrete — commit messages, file names, dates. No filler. No poetry."
+            )
+            if self.agent_state:
+                self.agent_state.set("thinking", "catching up")
+            async with message.channel.typing():
+                try:
+                    async with asyncio.timeout(120):
+                        result = await self._get_response(
+                            message.channel.id,
+                            catchup_prompt,
+                            channel_name=getattr(message.channel, "name", None) or "direct-message",
+                            force_cloud=True,
+                        )
+                except TimeoutError:
+                    await message.channel.send("Catch-up timed out — model may be overloaded.")
+                    if self.agent_state:
+                        self.agent_state.set("idle")
+                    return
+                except Exception as e:
+                    await message.channel.send(f"Catch-up failed: {type(e).__name__}")
+                    if self.agent_state:
+                        self.agent_state.set("idle")
+                    return
+
+            for chunk in _split_message(f"{result.response}\n\n-# {result.indicator}"):
+                await message.channel.send(chunk)
+            log_entry(self.vault_path, "COMMAND", "Catch-up briefing requested")
+            if self.agent_state:
+                self.agent_state.set("idle")
+            return
+
         # Check for vault save requests
         if SAVE_PATTERNS.match(content):
             if self.agent_state:

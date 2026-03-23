@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-23 — Catch-Up Command (MOR-25)
+
+When Kyle types `!catch-up` in Discord, Ivy runs through the ReAct loop with a structured prompt that gathers real data: recent git history, latest reports, pending queue items. Always routes to cloud (force_cloud=True) so Ivy has tool access.
+
+### Changes
+
+- **`!catch-up` command** (`trellis/senses/discord_channel.py`) — New command handler after `!deny`, before vault save check. Sends a structured prompt through `_get_response()` with `force_cloud=True`. The prompt instructs Ivy to use `shell_execute` for git log and ls commands, and `vault_read` for the latest garden report. 120s timeout with graceful error handling. Sets agent state to "catching up" during execution.
+
+---
+
 ## 2026-03-22 — Context-Aware Post-Tool Routing (MOR-26)
 
 After Ivy makes a tool call or queues something for approval, Kyle's short follow-up ("yes", "do it") no longer misroutes to the local model.
