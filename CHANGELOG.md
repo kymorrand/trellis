@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-23 — Self-Restart + Graceful Shutdown (MOR-29)
+
+Ivy can now restart herself after code changes — no more manual `systemctl restart`.
+
+### Self-Restart (`request_restart` tool)
+
+- **`request_restart`** tool — Writes a trigger file (`_ivy/restart-requested`) that a companion systemd service picks up. Includes reason and timestamp. Writes `.startup_message` so Ivy announces she's back after restart.
+- **`trellis-restarter.service`** — Companion systemd service (`scripts/trellis_restarter.sh`) that polls for the trigger file every 2 seconds and runs `systemctl restart trellis.service`.
+- **Permission** — `service_restart` set to `Permission.ASK`. Every restart requires Kyle's approval via `!approve`.
+
+### Graceful SIGTERM Handling (MOR-29)
+
+- **Signal handlers** (`scripts/run_discord.py`) — Registers `SIGTERM` and `SIGINT` handlers that trigger clean async shutdown. Discord bot disconnects, heartbeat stops, web server exits, all tasks cancelled. Target: <5s shutdown instead of 90s timeout to SIGKILL.
+
+### Testing
+
+- **`tests/test_restart.py`** — 7 tests: tool definition, schema, permission mapping, trigger file writing, startup message, empty/missing reason validation, timestamp format.
+
+---
+
 ## 2026-03-23 — Sprint 3: Linear Integration in Morning Brief (MOR-19)
 
 ### Morning Brief — Linear Tasks

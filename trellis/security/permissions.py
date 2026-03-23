@@ -60,6 +60,9 @@ PERMISSIONS = {
 
     # Armando (dev team dispatch)
     "armando_dispatch": Permission.ASK,              # Every dispatch needs Kyle's approval
+
+    # Service lifecycle
+    "service_restart": Permission.ASK,               # Restart Ivy to pick up code changes
 }
 
 

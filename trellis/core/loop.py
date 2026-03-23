@@ -248,6 +248,27 @@ TOOL_DEFINITIONS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "request_restart",
+        "description": (
+            "Request a restart of the Ivy service so that code changes, "
+            "personality updates, or configuration changes take effect. "
+            "Writes a trigger file that a companion service picks up. "
+            "Ivy will go offline for a few seconds and come back with "
+            "the updated code. Use after Armando finishes a development "
+            "task, or when Kyle asks you to restart."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Why the restart is needed (e.g., 'Armando shipped MOR-30, need to load new code').",
+                },
+            },
+            "required": ["reason"],
+        },
+    },
 ]
 
 
@@ -359,6 +380,8 @@ class ToolExecutor:
                 return await self._linear_read(tool_input)
             case "linear_search":
                 return await self._linear_search(tool_input)
+            case "request_restart":
+                return self._request_restart(tool_input)
             case _:
                 return f"Unknown tool: {tool_name}"
 
@@ -377,6 +400,8 @@ class ToolExecutor:
                 return "vault_read"
             case "linear_read" | "linear_search":
                 return "linear_morrandmore_read"
+            case "request_restart":
+                return "service_restart"
             case _:
                 return tool_name
 
@@ -507,6 +532,40 @@ class ToolExecutor:
         limit = tool_input.get("limit", 10)
         issues = await self.linear_client.search_issues(query, limit=limit)
         return format_issues(issues)
+
+    def _request_restart(self, tool_input: dict) -> str:
+        """Write a restart trigger file for the companion restarter service."""
+        import json as _json
+
+        from trellis.memory.journal import log_entry
+
+        reason = tool_input.get("reason", "")
+        if not reason:
+            return "Error: reason is required for restart requests."
+
+        # Write trigger file
+        trigger_dir = self.vault_path / "_ivy"
+        trigger_dir.mkdir(parents=True, exist_ok=True)
+        trigger_file = trigger_dir / "restart-requested"
+        trigger_file.write_text(
+            f"{datetime.now().isoformat()} — {reason}\n",
+            encoding="utf-8",
+        )
+
+        # Write startup message so Ivy announces she's back
+        startup_msg = {
+            "channel": "general",
+            "message": f"Back online — restarted because: {reason}",
+        }
+        startup_path = Path(__file__).resolve().parent.parent.parent / ".startup_message"
+        startup_path.write_text(_json.dumps(startup_msg), encoding="utf-8")
+
+        log_entry(self.vault_path, "SYSTEM", "Restart requested", reason)
+
+        return (
+            f"Restart requested — I'll be back in a few seconds. "
+            f"Reason: {reason}"
+        )
 
 
 # --- Agent Brain ---------------------------------------------------

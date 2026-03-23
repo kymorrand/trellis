@@ -8,6 +8,7 @@ sharing agent state, approval queue, and heartbeat data.
 
 import asyncio
 import logging
+import signal
 import sys
 from pathlib import Path
 
@@ -132,6 +133,18 @@ async def run_all(config: dict):
         except Exception as e:
             logger.warning(f"Failed to load startup message: {e}")
 
+    # Register signal handlers for graceful shutdown (MOR-29)
+    shutdown_event = asyncio.Event()
+
+    def _signal_handler(sig: int, _frame) -> None:
+        sig_name = signal.Signals(sig).name
+        logger.info(f"Received {sig_name} — shutting down gracefully")
+        shutdown_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _signal_handler, sig, None)
+
     # Start all as concurrent tasks
     async with bot:
         heartbeat_task = asyncio.create_task(heartbeat.start())
@@ -142,29 +155,37 @@ async def run_all(config: dict):
         index_task = asyncio.create_task(_index_vault_background(knowledge_manager))
 
         logger.info("All systems online — Discord + Web (:8420) + Heartbeat + FileWatcher")
+
+        # Run bot until signal or disconnect
+        bot_task = asyncio.create_task(bot.start(config["discord_token"]))
+        shutdown_task = asyncio.create_task(shutdown_event.wait())
+
         try:
-            await bot.start(config["discord_token"])
+            # Wait for either: bot disconnects naturally OR signal received
+            done, _pending = await asyncio.wait(
+                [bot_task, shutdown_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
         finally:
-            # Graceful shutdown
+            # Graceful shutdown — target <5s total
+            logger.info("Shutting down all systems...")
+            if not bot.is_closed():
+                await bot.close()
+            bot_task.cancel()
+            shutdown_task.cancel()
             await heartbeat.stop()
             await file_watcher.stop()
             heartbeat_task.cancel()
             watcher_task.cancel()
             index_task.cancel()
             web_server.should_exit = True
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-            try:
-                await watcher_task
-            except asyncio.CancelledError:
-                pass
-            try:
-                await index_task
-            except asyncio.CancelledError:
-                pass
+            for task in (heartbeat_task, watcher_task, index_task):
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
             await web_task
+            logger.info("Shutdown complete")
 
 
 def main():
