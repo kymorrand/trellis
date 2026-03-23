@@ -30,16 +30,22 @@ ALLOWED_COMMANDS = frozenset({
     "claude",
 })
 
-# Patterns that are never allowed, regardless of base command
-BLOCKED_PATTERNS = frozenset({
-    "sudo", "rm ", "rm\t", "rmdir", "mkfs", "dd ", "dd\t",
-    "chmod", "chown", "chgrp", "kill", "killall", "pkill",
-    "shutdown", "reboot", "halt", "poweroff",
-    "apt", "apt-get", "pip install", "pip3 install",
-    "npm install", "yarn add", "cargo install",
-    "> /dev/", "| bash", "| sh", "| zsh",
+# Patterns that are never allowed anywhere in the command (substring match)
+BLOCKED_SUBSTRINGS = frozenset({
+    "sudo", "> /dev/", "| bash", "| sh", "| zsh",
     "eval ", "exec ", "`", "$(",
     "--force", "--hard",
+})
+
+# Commands that are blocked when they appear as the base command of any
+# segment (start of command or after a pipe). Checked as whole-word match
+# against the first token, NOT as a substring — so "git add" won't trigger "dd".
+BLOCKED_COMMANDS = frozenset({
+    "rm", "rmdir", "mkfs", "dd",
+    "chmod", "chown", "chgrp", "kill", "killall", "pkill",
+    "shutdown", "reboot", "halt", "poweroff",
+    "apt", "apt-get", "pip", "pip3",
+    "npm", "yarn", "cargo",
 })
 
 # Maximum output size (characters)
@@ -58,8 +64,8 @@ def validate_command(command: str) -> str | None:
     if not stripped:
         return "Empty command."
 
-    # Check blocked patterns first
-    for pattern in BLOCKED_PATTERNS:
+    # Check blocked substrings (dangerous anywhere in the command)
+    for pattern in BLOCKED_SUBSTRINGS:
         if pattern in stripped:
             return f"Blocked: command contains disallowed pattern '{pattern}'."
 
@@ -72,27 +78,27 @@ def validate_command(command: str) -> str | None:
     if not parts:
         return "Empty command."
 
-    base_cmd = parts[0].split("/")[-1]  # Handle full paths like /usr/bin/git
+    # Split into pipe segments and validate each one
+    segments = stripped.split("|") if "|" in stripped else [stripped]
+    for segment in segments:
+        seg = segment.strip()
+        if not seg:
+            continue
+        try:
+            seg_parts = shlex.split(seg)
+        except ValueError:
+            return "Invalid command syntax in pipe chain."
+        if not seg_parts:
+            continue
+        seg_cmd = seg_parts[0].split("/")[-1]  # Handle full paths like /usr/bin/git
 
-    # Check for pipe chains — validate each command in the pipeline
-    if "|" in stripped:
-        segments = stripped.split("|")
-        for segment in segments:
-            seg = segment.strip()
-            if not seg:
-                continue
-            try:
-                seg_parts = shlex.split(seg)
-            except ValueError:
-                return "Invalid command syntax in pipe chain."
-            if seg_parts:
-                seg_cmd = seg_parts[0].split("/")[-1]
-                if seg_cmd not in ALLOWED_COMMANDS:
-                    return f"Blocked: '{seg_cmd}' is not in the allowed command list."
-        return None
+        # Check if the command itself is blocked
+        if seg_cmd in BLOCKED_COMMANDS:
+            return f"Blocked: '{seg_cmd}' is not allowed."
 
-    if base_cmd not in ALLOWED_COMMANDS:
-        return f"Blocked: '{base_cmd}' is not in the allowed command list. Allowed: {', '.join(sorted(ALLOWED_COMMANDS))}"
+        # Check if the command is whitelisted
+        if seg_cmd not in ALLOWED_COMMANDS:
+            return f"Blocked: '{seg_cmd}' is not in the allowed command list."
 
     return None
 

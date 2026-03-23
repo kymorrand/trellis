@@ -93,6 +93,31 @@ class TestValidateCommand:
         assert result is not None
         assert "Invalid" in result
 
+    def test_git_add_not_blocked_by_dd(self):
+        """'git add' should not be blocked by the 'dd' pattern."""
+        assert validate_command("git add file.txt") is None
+
+    def test_git_add_all_not_blocked(self):
+        assert validate_command("git add .") is None
+
+    def test_dd_command_itself_is_blocked(self):
+        result = validate_command("dd if=/dev/zero of=/tmp/out")
+        assert result is not None
+        assert "Blocked" in result
+
+    def test_words_containing_blocked_names_allowed(self):
+        """Commands like 'echo address' should not trigger 'dd' blocking."""
+        assert validate_command("echo address") is None
+
+    def test_rm_as_argument_not_blocked(self):
+        """'grep rm' should be allowed — 'rm' is an argument, not a command."""
+        assert validate_command("grep rm file.txt") is None
+
+    def test_kill_command_blocked(self):
+        result = validate_command("kill -9 1234")
+        assert result is not None
+        assert "Blocked" in result
+
 
 # ─── execute_command ─────────────────────────────────────
 
