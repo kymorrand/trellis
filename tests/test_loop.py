@@ -181,7 +181,7 @@ class TestToolExecutor:
 
     @pytest.mark.asyncio
     async def test_ask_permission_with_queue(self, vault):
-        """ASK permission with queue — creates queue item."""
+        """ASK permission with queue — creates queue item with tool context."""
         mock_queue = MagicMock()
         mock_queue.add_item.return_value = "20260322-140000"
         executor = ToolExecutor(vault_path=vault, approval_queue=mock_queue)
@@ -193,6 +193,8 @@ class TestToolExecutor:
             mock_queue.add_item.assert_called_once()
             call_kwargs = mock_queue.add_item.call_args
             assert call_kwargs[1]["item_type"] == "tool_approval"
+            assert call_kwargs[1]["tool_name"] == "vault_search"
+            assert call_kwargs[1]["tool_input"] == {"query": "test"}
 
     @pytest.mark.asyncio
     async def test_agent_state_updated(self, vault):

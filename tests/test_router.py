@@ -129,6 +129,15 @@ class TestClassify:
     def test_dispatch_keyword(self, router):
         assert router.classify("dispatch the task now") == "cloud"
 
+    def test_approve_keyword(self, router):
+        assert router.classify("approved") == "cloud"
+
+    def test_deny_keyword(self, router):
+        assert router.classify("deny that request") == "cloud"
+
+    def test_confirm_keyword(self, router):
+        assert router.classify("confirm the dispatch") == "cloud"
+
     def test_yes_still_local(self, router):
         """Short follow-ups like 'yes' should stay local — not a bug."""
         assert router.classify("yes") == "local"

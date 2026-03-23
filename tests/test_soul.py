@@ -115,6 +115,14 @@ class TestLoadSoulLocal:
         local = load_soul_local(agents_dir=agents_dir)
         assert "Never invent" in local
 
+    def test_condensed_has_no_tool_access_warning(self, agents_dir):
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "do NOT have access to any tools" in local
+
+    def test_condensed_has_claude_redirect(self, agents_dir):
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "/claude" in local
+
     def test_missing_soul_returns_empty(self, tmp_path):
         assert load_soul_local(agents_dir=str(tmp_path)) == ""
 

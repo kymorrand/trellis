@@ -51,7 +51,8 @@ SONNET_KEYWORDS = re.compile(
     r"code\s+review|security\s+audit|design\s+system|"
     r"armando|dispatch|launch\s+armando|"
     r"search\s+the\s+vault|save\s+to\s+vault|"
-    r"run\s+command|execute|shell)\b",
+    r"run\s+command|execute|shell|"
+    r"approve|approved|deny|denied|confirm|confirmed)\b",
     re.IGNORECASE,
 )
 

@@ -1,90 +1,67 @@
-# Sprint 3 — Armando Dispatch Tool
+# Sprint 3b — Discord Approval Commands + Local Model Grounding
 
 **Date:** 2026-03-22
-**Linear Issue:** MOR-21
+**Linear Issues:** MOR-22, MOR-23
 **Scope:** Root only (backend)
 **Status:** In Progress
 
-## Goal
+## MOR-22: Discord Approval Commands
 
-Give Ivy the ability to dispatch Armando (The Gardener) for development work. This is the bridge between Kyle's personal agent and his dev team — Ivy does research/design, then hands off to Armando for implementation.
+### Problem
+Queue items land in `_ivy/queue/` but Kyle can't approve them from Discord.
 
-## Architecture
+### Implementation
 
-Ivy calls `armando_dispatch` tool → shells out to `claude -p` with `--agent thorn` → Thorn reads task spec, dispatches Bloom/Root, writes garden report → stdout returned to Ivy.
+**1. Extend queue item format (`trellis/core/queue.py`)**
+- Add `tool_name` and `tool_input` fields to `add_item()` and frontmatter
+- These store the pending tool call so it can be re-executed on approval
+- Backward compatible — existing items without these fields still work
 
-### Command Format
-```
-cd {project_dir} && claude --dangerously-skip-permissions --agent thorn -p "{message}" --max-budget-usd 5 --no-session-persistence
-```
+**2. Add Discord commands (`trellis/senses/discord_channel.py`)**
+- `!queue` — List pending items with IDs
+- `!approve <id>` — Approve item, re-execute the tool call, return result
+- `!deny <id>` — Deny item with optional reason, move to dismissed/
 
-Flags verified against `claude --help`:
-- `-p` / `--print` — Non-interactive mode, print response and exit ✅
-- `--agent` — Agent for the session ✅
-- `--dangerously-skip-permissions` — Bypass permission checks ✅
-- `--max-budget-usd` — Cap API spend per dispatch ✅
-- `--no-session-persistence` — Don't save session to disk ✅
+**3. Wire approval to ToolExecutor**
+- On `!approve`, read queue item, extract tool_name + tool_input
+- Execute through ToolExecutor (bypassing permission check since Kyle approved)
+- Move item to approved/
+- Send result to Discord
 
-## Root's Tasks
+### Files
+- `trellis/core/queue.py` — Add tool_name/tool_input to add_item and _parse_item
+- `trellis/senses/discord_channel.py` — Add !queue, !approve, !deny commands
+- `trellis/core/loop.py` — Update _queue_approval to pass tool context to queue
+- `tests/test_loop.py` — Update queue tests for new fields
+- `CHANGELOG.md`
 
-### 1. Tool Definition (`trellis/core/loop.py`)
-- Add `armando_dispatch` to `TOOL_DEFINITIONS` list
-- Schema: `message` (string, required), `project_dir` (string, required)
-- Description must warn about 15-30 min runtime
+## MOR-23: Prevent Local Model Fabrication
 
-### 2. Tool Handler (`trellis/core/loop.py`)
-- Add `case "armando_dispatch"` in `ToolExecutor._run()`
-- Implement `_armando_dispatch()` method on ToolExecutor
-- Validate message and project_dir are non-empty
-- Validate project_dir exists on disk
-- Build command with `shlex.quote()` for the message
-- Call `execute_command()` with 1800s timeout
-- Import `shlex` at top of file (already used in shell.py)
+### Problem
+qwen3 fabricates tool actions in text responses when it has no tool access.
 
-### 3. Permission Key (`trellis/core/loop.py`)
-- Add `case "armando_dispatch": return "armando_dispatch"` in `_permission_key()`
+### Implementation (both options from the issue)
 
-### 4. Permission Entry (`trellis/security/permissions.py`)
-- Add `"armando_dispatch": Permission.ASK` to PERMISSIONS dict
-- This ensures Kyle must approve every dispatch
+**Option A: Strengthen local grounding (`trellis/mind/soul.py`)**
+- Append to `load_soul_local()` output, after the IMPORTANT section:
+  "You do NOT have access to any tools. You cannot search the vault, execute 
+  commands, dispatch Armando, or approve queue items. If Kyle asks you to DO 
+  something that requires a tool, tell him to prefix with /claude so the 
+  request routes to the cloud model which has tool access."
 
-### 5. Timeout Parameter (`trellis/hands/shell.py`)
-- Add optional `timeout` parameter to `execute_command(command, cwd, timeout=TIMEOUT)`
-- Pass it through to `asyncio.wait_for()` instead of hardcoded `TIMEOUT`
-- Backward compatible — default is still 30s
+**Option B: Route follow-ups to cloud (`trellis/mind/router.py`)**
+- Add "approve", "approved", "deny", "denied", "confirm" to SONNET_KEYWORDS
 
-### 6. Tests (`tests/test_loop.py` + `tests/test_shell.py`)
-- `armando_dispatch` is in TOOL_DEFINITIONS
-- Permission key maps to `"armando_dispatch"`
-- Permission check returns ASK
-- Command construction with proper escaping
-- project_dir validation (empty, nonexistent)
-- message validation (empty)
-- Timeout override in execute_command
-- Mock the claude CLI call — don't run real sprints
-
-### 7. CHANGELOG.md
-- Add entry for armando_dispatch tool
-
-## Files Root May Touch
-- `trellis/core/loop.py` — tool def, handler, permission key
-- `trellis/hands/shell.py` — timeout parameter
-- `trellis/security/permissions.py` — permission entry
-- `tests/test_loop.py` — armando_dispatch tests
-- `tests/test_shell.py` — timeout parameter tests
-- `CHANGELOG.md` — new entry
-
-## Files Root Must NOT Touch
-- `trellis/static/**` (Bloom's scope)
-- `trellis/senses/web.py` (Bloom's scope)
-- `agents/ivy/SOUL.md` (Kyle only)
+### Files
+- `trellis/mind/soul.py` — Strengthen local grounding
+- `trellis/mind/router.py` — Add approval keywords
+- `tests/test_soul.py` — Test grounding text present
+- `tests/test_router.py` — Test approve/deny route to cloud
 
 ## Acceptance Criteria
-1. `armando_dispatch` appears in TOOL_DEFINITIONS with correct schema
-2. Permission is ASK — Ivy can never auto-dispatch without Kyle's approval
-3. `execute_command` accepts optional timeout parameter (backward compatible)
-4. The dispatch handler validates inputs, builds correct command, calls shell with 1800s timeout
-5. All new code has tests — mock the claude CLI, don't run real sprints
-6. `python -m pytest tests/ -v` passes
-7. `ruff check .` passes
-8. CHANGELOG.md updated
+1. `!queue` lists pending items in Discord
+2. `!approve <id>` executes the pending tool and returns result
+3. `!deny <id>` moves item to dismissed/ without executing
+4. Local model explicitly says it can't use tools
+5. "approved"/"approve"/"deny" route to cloud
+6. All tests pass, lint clean, CHANGELOG updated

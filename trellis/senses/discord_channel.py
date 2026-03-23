@@ -261,6 +261,75 @@ class IvyDiscordBot(discord.Client):
             log_entry(self.vault_path, "COMMAND", "Status report requested")
             return
 
+        # !queue command — list pending approval items
+        if content.lower().strip() == "!queue":
+            queue = self.brain.tool_executor.approval_queue
+            if queue is None:
+                await message.channel.send("Approval queue not available.")
+                return
+            items = queue.list_items()
+            if not items:
+                await message.channel.send("Queue is empty — nothing pending.")
+            else:
+                lines = ["**Pending approval:**"]
+                for item in items:
+                    lines.append(f"• `{item['id']}` — {item['summary']}")
+                await message.channel.send("\n".join(lines))
+            log_entry(self.vault_path, "COMMAND", f"Queue listing: {len(items)} items")
+            return
+
+        # !approve <id> command
+        if content.lower().startswith("!approve"):
+            parts = content.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.channel.send("Usage: `!approve <id>` — run `!queue` to see pending items.")
+                return
+            item_id = parts[1].strip()
+            queue = self.brain.tool_executor.approval_queue
+            if queue is None:
+                await message.channel.send("Approval queue not available.")
+                return
+            item = queue.get_item(item_id)
+            if not item:
+                await message.channel.send(f"No pending item with ID `{item_id}`.")
+                return
+
+            # Execute the pending tool call if it has one
+            tool_name = item.get("tool_name", "")
+            tool_input = item.get("tool_input")
+
+            if tool_name and tool_input is not None:
+                async with message.channel.typing():
+                    result = await self.brain.tool_executor._run(tool_name, tool_input)
+                queue.approve_item(item_id)
+                reply = f"✅ Approved `{item_id}` — executed `{tool_name}`\n\n{result}"
+            else:
+                queue.approve_item(item_id)
+                reply = f"✅ Approved `{item_id}` (no tool call to execute)."
+
+            for chunk in _split_message(reply):
+                await message.channel.send(chunk)
+            log_entry(self.vault_path, "COMMAND", f"Approved queue item: {item_id}")
+            return
+
+        # !deny <id> command
+        if content.lower().startswith("!deny"):
+            parts = content.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.channel.send("Usage: `!deny <id>`")
+                return
+            item_id = parts[1].strip()
+            queue = self.brain.tool_executor.approval_queue
+            if queue is None:
+                await message.channel.send("Approval queue not available.")
+                return
+            if queue.dismiss_item(item_id):
+                await message.channel.send(f"❌ Denied `{item_id}` — moved to dismissed.")
+            else:
+                await message.channel.send(f"No pending item with ID `{item_id}`.")
+            log_entry(self.vault_path, "COMMAND", f"Denied queue item: {item_id}")
+            return
+
         # Check for vault save requests
         if SAVE_PATTERNS.match(content):
             if self.agent_state:

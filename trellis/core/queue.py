@@ -52,6 +52,8 @@ class ApprovalQueue:
         body: str,
         context: str = "",
         source: str = "ivy",
+        tool_name: str = "",
+        tool_input: dict | None = None,
     ) -> str:
         """Create a new queue item. Returns the item ID."""
         now = datetime.now()
@@ -68,6 +70,10 @@ class ApprovalQueue:
             "created": now.strftime("%Y-%m-%d %H:%M"),
             "summary": summary,
         }
+        if tool_name:
+            frontmatter["tool_name"] = tool_name
+        if tool_input is not None:
+            frontmatter["tool_input"] = tool_input
 
         content = "---\n"
         content += yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
@@ -135,4 +141,6 @@ class ApprovalQueue:
             "summary": meta.get("summary", ""),
             "body": body,
             "filename": filepath.name,
+            "tool_name": meta.get("tool_name", ""),
+            "tool_input": meta.get("tool_input"),
         }

@@ -65,6 +65,13 @@ def load_soul_local(agent_name: str = "ivy", agents_dir: str = "agents") -> str:
         "Only reference real information from the conversation. "
         "Never invent projects, data, metrics, collaborations, or status updates. "
         "If you don't know something, say so. Keep responses concise and direct."
+        "\n\n"
+        "You do NOT have access to any tools. You cannot search the vault, "
+        "execute commands, dispatch Armando, or approve queue items. "
+        "If Kyle asks you to DO something that requires action (file changes, "
+        "searches, dispatching, approving), tell him: "
+        "\"That requires tool access — prefix your message with /claude "
+        "to route to the cloud model.\""
     )
 
     logger.info(f"Loaded condensed soul for '{agent_name}' ({len(condensed)} chars)")

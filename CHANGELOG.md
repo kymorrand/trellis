@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-03-22 — Sprint 3b: Discord Approval Commands + Local Model Grounding (MOR-22, MOR-23)
+
+### Discord Approval Commands (MOR-22)
+
+- **Queue item format** (`trellis/core/queue.py`) — `add_item()` now accepts optional `tool_name` and `tool_input` parameters. Stored in YAML frontmatter so pending tool calls can be re-executed on approval. Backward compatible — existing items without these fields still parse correctly.
+- **ToolExecutor wiring** (`trellis/core/loop.py`) — `_queue_approval()` now passes `tool_name` and `tool_input` to the queue when creating ASK-level items.
+- **Discord commands** (`trellis/senses/discord_channel.py`) — Three new commands:
+  - `!queue` — List pending approval items with IDs and summaries
+  - `!approve <id>` — Approve item and re-execute the pending tool call, returning the result
+  - `!deny <id>` — Deny item and move to dismissed/ without executing
+
+### Local Model Grounding (MOR-23)
+
+- **Strengthen local grounding** (`trellis/mind/soul.py`) — `load_soul_local()` now explicitly tells local models they have no tool access and directs Kyle to use `/claude` for action-requiring requests.
+- **Route approval keywords to cloud** (`trellis/mind/router.py`) — Added `approve|approved|deny|denied|confirm|confirmed` to SONNET_KEYWORDS so approval-related messages always route to the cloud model with tool access.
+
+### Testing
+
+- **`tests/test_queue.py`** (new) — 12 tests covering tool_name/tool_input storage, frontmatter serialization, backward compatibility, get/approve/dismiss operations.
+- **`tests/test_loop.py`** — Updated `test_ask_permission_with_queue` to verify tool_name and tool_input are passed through.
+- **`tests/test_soul.py`** — 2 new tests: no-tool-access warning present, /claude redirect present.
+- **`tests/test_router.py`** — 3 new tests: "approved", "deny that request", "confirm the dispatch" all route to cloud.
+
+---
+
 ## 2026-03-22 — Sprint 3: Armando Dispatch Tool (MOR-21)
 
 Ivy can now launch Armando (The Gardener) for development work — the bridge between Kyle's personal agent and his multi-agent dev team.

@@ -272,6 +272,8 @@ class ToolExecutor:
                 body=body,
                 context=f"Tool: {tool_name}",
                 source="ivy",
+                tool_name=tool_name,
+                tool_input=tool_input,
             )
             return (
                 f"This action ({tool_name}) requires Kyle's approval. "
