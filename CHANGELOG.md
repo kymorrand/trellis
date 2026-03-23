@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-23 — Auto-Select Single Queue Item for !approve / !deny
+
+`!approve` and `!deny` no longer require an ID when there's only one item in the queue — they auto-select it. With zero items, they report the queue is empty. With 2+ items, they list them and ask Kyle to specify.
+
+### Changes
+
+- **`!approve` auto-select** (`trellis/senses/discord_channel.py`) — When called without an ID: 0 items → "Queue is empty", 1 item → auto-approve, 2+ items → list with IDs.
+- **`!deny` auto-select** (`trellis/senses/discord_channel.py`) — Same pattern: 0 items → "Queue is empty", 1 item → auto-deny, 2+ items → list with IDs.
+
+---
+
 ## 2026-03-23 — Catch-Up Command (MOR-25)
 
 When Kyle types `!catch-up` in Discord, Ivy runs through the ReAct loop with a structured prompt that gathers real data: recent git history, latest reports, pending queue items. Always routes to cloud (force_cloud=True) so Ivy has tool access.

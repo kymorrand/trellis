@@ -280,17 +280,30 @@ class IvyDiscordBot(discord.Client):
             log_entry(self.vault_path, "COMMAND", f"Queue listing: {len(items)} items")
             return
 
-        # !approve <id> command
+        # !approve <id> command (or just !approve for single item)
         if content.lower().startswith("!approve"):
-            parts = content.split(maxsplit=1)
-            if len(parts) < 2:
-                await message.channel.send("Usage: `!approve <id>` — run `!queue` to see pending items.")
-                return
-            item_id = parts[1].strip()
             queue = self.brain.tool_executor.approval_queue
             if queue is None:
                 await message.channel.send("Approval queue not available.")
                 return
+
+            parts = content.split(maxsplit=1)
+            item_id = parts[1].strip() if len(parts) > 1 else None
+
+            if item_id is None:
+                items = queue.list_items()
+                if len(items) == 0:
+                    await message.channel.send("Queue is empty — nothing to approve.")
+                    return
+                elif len(items) == 1:
+                    item_id = items[0]["id"]
+                else:
+                    lines = ["Multiple items pending — specify an ID:"]
+                    for item in items:
+                        lines.append(f"• `{item['id']}` — {item['summary']}")
+                    await message.channel.send("\n".join(lines))
+                    return
+
             item = queue.get_item(item_id)
             if not item:
                 await message.channel.send(f"No pending item with ID `{item_id}`.")
@@ -314,17 +327,30 @@ class IvyDiscordBot(discord.Client):
             log_entry(self.vault_path, "COMMAND", f"Approved queue item: {item_id}")
             return
 
-        # !deny <id> command
+        # !deny <id> command (or just !deny for single item)
         if content.lower().startswith("!deny"):
-            parts = content.split(maxsplit=1)
-            if len(parts) < 2:
-                await message.channel.send("Usage: `!deny <id>`")
-                return
-            item_id = parts[1].strip()
             queue = self.brain.tool_executor.approval_queue
             if queue is None:
                 await message.channel.send("Approval queue not available.")
                 return
+
+            parts = content.split(maxsplit=1)
+            item_id = parts[1].strip() if len(parts) > 1 else None
+
+            if item_id is None:
+                items = queue.list_items()
+                if len(items) == 0:
+                    await message.channel.send("Queue is empty — nothing to deny.")
+                    return
+                elif len(items) == 1:
+                    item_id = items[0]["id"]
+                else:
+                    lines = ["Multiple items pending — specify an ID:"]
+                    for item in items:
+                        lines.append(f"• `{item['id']}` — {item['summary']}")
+                    await message.channel.send("\n".join(lines))
+                    return
+
             if queue.dismiss_item(item_id):
                 await message.channel.send(f"❌ Denied `{item_id}` — moved to dismissed.")
             else:
