@@ -9,7 +9,7 @@ Think of it like a game's background AI tick: even when the player isn't doing
 anything, the world keeps running.
 
 Schedule:
-    Every 30 min  — Check inbox for new items (silent)
+    Every 30 min  — Check inbox for new items, process drops (silent)
     Every 6 hours — Reindex vault for semantic search (silent)
     Midnight      — Nightly backup, journal rollover, cost report (silent)
     8:00 AM       — Morning brief (-> Discord)
@@ -138,26 +138,41 @@ class HeartbeatScheduler:
     # --- Silent background tasks -----------------------------------------
 
     async def _check_inbox(self, now: datetime):
-        """Check _ivy/inbox/ directories for new files."""
-        inbox_path = self.vault_path / "_ivy" / "inbox"
-        if not inbox_path.is_dir():
+        """Scan _ivy/inbox/drops/ for unprocessed files, classify via InboxProcessor,
+        move to _ivy/inbox/items/, and log results to journal.
+        """
+        drops_dir = self.vault_path / "_ivy" / "inbox" / "drops"
+        if not drops_dir.is_dir():
+            logger.debug("Heartbeat: inbox drops directory does not exist")
             return
 
-        new_files = []
-        for child in inbox_path.rglob("*"):
-            if child.is_file() and child.suffix == ".md":
-                new_files.append(str(child.relative_to(self.vault_path)))
+        drop_files = [f for f in drops_dir.iterdir() if f.is_file() and f.suffix == ".md"]
+        if not drop_files:
+            logger.debug("Heartbeat: no unprocessed drops")
+            return
 
-        if new_files:
+        from trellis.core.inbox import InboxProcessor
+
+        processor = InboxProcessor(vault_path=self.vault_path)
+        processed_count = 0
+
+        for drop_file in drop_files:
+            try:
+                content = drop_file.read_text(encoding="utf-8")
+                item = await processor.process_drop(content=content, metadata={"source": "drop_file", "filename": drop_file.name})
+                # Remove the processed drop file (item is now in items/)
+                drop_file.unlink()
+                processed_count += 1
+                logger.info("Heartbeat: processed drop %s -> item %s", drop_file.name, item.id)
+            except Exception:
+                logger.error("Heartbeat: failed to process drop %s", drop_file.name, exc_info=True)
+
+        if processed_count > 0:
             log_entry(
                 self.vault_path,
                 "HEARTBEAT_INBOX",
-                f"Inbox check: {len(new_files)} items detected",
-                "\n".join(new_files[:20]),
+                f"Inbox check: processed {processed_count} drop(s) into items",
             )
-            logger.info(f"Heartbeat: {len(new_files)} items in inbox")
-        else:
-            logger.debug("Heartbeat: inbox empty")
 
     async def _reindex_vault(self):
         """Reindex vault for semantic search — picks up new/changed files."""

@@ -23,6 +23,12 @@ API:
     /api/brief               — Aggregated morning brief data
     /api/gardener/status     — Armando agent status reports
     /api/gardener/health     — Vault health stats (indexing, stale, orphans)
+    /api/inbox/items         — List pending inbox items (GET)
+    /api/inbox/drop          — Accept new content for triage (POST)
+    /api/inbox/{id}/approve  — Approve routing proposal (POST)
+    /api/inbox/{id}/redirect — Override vault path (POST)
+    /api/inbox/{id}/archive  — Archive/dismiss item (POST)
+    /api/inbox/{id}          — Single item detail (GET)
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
@@ -55,6 +62,18 @@ INTERNAL_DIRS = {"_ivy", ".git", ".obsidian", ".trash"}
 # Patterns for parsing report filenames
 _STATUS_RE = re.compile(r"^status-([a-z]+)-(\d{4}-\d{2}-\d{2})\.md$")
 _GARDEN_REPORT_RE = re.compile(r"^garden-report-(\d{4}-\d{2}-\d{2})\.md$")
+
+
+# ─── Pydantic models for inbox API ────────────────────────────────────
+
+class InboxDropRequest(BaseModel):
+    content: str
+    content_type: str = "text"
+    metadata: dict | None = None
+
+
+class InboxRedirectRequest(BaseModel):
+    vault_path: str
 
 
 def _parse_report_file(file_path: Path, reports_dir: Path) -> dict | None:
@@ -579,4 +598,155 @@ def create_app(
         health = await knowledge_manager.vault_health()
         return health
 
+    # ─── API: Inbox ───────────────────────────────────────────────
+
+    @app.get("/api/inbox/items")
+    async def api_inbox_items():
+        """List pending inbox items sorted by urgency then planted date."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            return {"items": [], "counts": {"pending": 0, "today": 0, "immediate": 0}}
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        items = proc.list_items(status="pending")
+
+        serialized = []
+        immediate_count = 0
+        today_count = 0
+        for item in items:
+            item_dict = _inbox_item_to_dict(item)
+            serialized.append(item_dict)
+            if item.routing:
+                if item.routing.urgency == "immediate":
+                    immediate_count += 1
+                elif item.routing.urgency == "today":
+                    today_count += 1
+
+        return {
+            "items": serialized,
+            "counts": {
+                "pending": len(serialized),
+                "today": today_count,
+                "immediate": immediate_count,
+            },
+        }
+
+    @app.post("/api/inbox/drop")
+    async def api_inbox_drop(body: InboxDropRequest):
+        """Accept new content, classify, and return item with routing proposal."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            raise HTTPException(503, "Vault not configured")
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        item = await proc.process_drop(
+            content=body.content,
+            content_type=body.content_type,
+            metadata=body.metadata or {},
+        )
+        return {"item": _inbox_item_to_dict(item)}
+
+    @app.get("/api/inbox/{item_id}")
+    async def api_inbox_detail(item_id: str):
+        """Full item detail including vault matches."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            raise HTTPException(503, "Vault not configured")
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        item = proc.load_item(item_id)
+        if not item:
+            raise HTTPException(404, "Item not found")
+        return {"item": _inbox_item_to_dict(item)}
+
+    @app.post("/api/inbox/{item_id}/approve")
+    async def api_inbox_approve(item_id: str):
+        """Approve routing proposal, save content to proposed vault path."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            raise HTTPException(503, "Vault not configured")
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        item = proc.approve_item(item_id)
+        if not item:
+            raise HTTPException(404, "Item not found")
+
+        saved_to = item.routing.vault_path if item.routing else f"knowledge/inbox/{item_id}.md"
+
+        if vault_path:
+            from trellis.memory.journal import log_entry
+            log_entry(vault_path, "INBOX_APPROVE", f"Approved inbox item {item_id} -> {saved_to}")
+
+        return {"item": _inbox_item_to_dict(item), "saved_to": saved_to}
+
+    @app.post("/api/inbox/{item_id}/redirect")
+    async def api_inbox_redirect(item_id: str, body: InboxRedirectRequest):
+        """Override proposed path and save content there."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            raise HTTPException(503, "Vault not configured")
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        item = proc.approve_item(item_id, vault_path_override=body.vault_path)
+        if not item:
+            raise HTTPException(404, "Item not found")
+
+        if vault_path:
+            from trellis.memory.journal import log_entry
+            log_entry(vault_path, "INBOX_REDIRECT", f"Redirected inbox item {item_id} -> {body.vault_path}")
+
+        return {"item": _inbox_item_to_dict(item), "saved_to": body.vault_path}
+
+    @app.post("/api/inbox/{item_id}/archive")
+    async def api_inbox_archive(item_id: str):
+        """Archive/dismiss an inbox item."""
+        from trellis.core.inbox import InboxProcessor
+
+        if not vault_path:
+            raise HTTPException(503, "Vault not configured")
+
+        proc = InboxProcessor(vault_path=vault_path, config=config)
+        item = proc.archive_item(item_id)
+        if not item:
+            raise HTTPException(404, "Item not found")
+
+        archived_to = str(vault_path / "_ivy" / "inbox" / "archived" / f"{item_id}.md")
+
+        if vault_path:
+            from trellis.memory.journal import log_entry
+            log_entry(vault_path, "INBOX_ARCHIVE", f"Archived inbox item {item_id}")
+
+        return {"item": _inbox_item_to_dict(item), "archived_to": archived_to}
+
     return app
+
+
+def _inbox_item_to_dict(item) -> dict:
+    """Convert an InboxItem to a JSON-serializable dict matching the API contract."""
+    result: dict = {
+        "id": item.id,
+        "content": item.content,
+        "content_type": item.content_type,
+        "summary": item.summary,
+        "planted": item.planted,
+        "tended": item.tended,
+        "status": item.status,
+        "routing": None,
+        "metadata": item.metadata,
+    }
+    if item.routing:
+        result["routing"] = {
+            "vault_path": item.routing.vault_path,
+            "confidence": item.routing.confidence,
+            "confidence_tier": item.routing.confidence_tier,
+            "urgency": item.routing.urgency,
+            "role": item.routing.role,
+            "vault_matches": item.routing.vault_matches,
+            "reasoning": item.routing.reasoning,
+        }
+    return result

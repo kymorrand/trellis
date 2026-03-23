@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
+
+Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
+
+### InboxProcessor (`trellis/core/inbox.py`)
+
+- **`InboxProcessor`** class -- the intelligence engine for content triage. Classifies content type (note/task/reference/question/idea/link/file), detects urgency (immediate/today/queue), matches against existing vault content, identifies best Ivy role (researcher/strategist/writer/organizer), and proposes a vault path with confidence score.
+- **Confidence tiers** -- 90%+ green, 70-89% amber, <70% red. Confidence combines vault match strength, role detection clarity, and content type specificity.
+- **Model-assisted classification** -- Uses `ModelRouter` when available for AI-powered classification; falls back to keyword heuristics when the router is unavailable or fails.
+- **File-based storage** -- Items stored as YAML-frontmatter Markdown in `_ivy/inbox/items/`, same pattern as `queue.py`. Archived items move to `_ivy/inbox/archived/`.
+
+### Inbox API Endpoints (`trellis/senses/web.py`)
+
+- **`GET /api/inbox/items`** -- List pending items sorted by urgency then planted date, with counts (pending, today, immediate).
+- **`POST /api/inbox/drop`** -- Accept content, run through InboxProcessor, return item with routing proposal.
+- **`GET /api/inbox/{item_id}`** -- Full item detail including vault matches.
+- **`POST /api/inbox/{item_id}/approve`** -- Approve routing, save content to proposed vault path.
+- **`POST /api/inbox/{item_id}/redirect`** -- Override proposed path, save to specified location.
+- **`POST /api/inbox/{item_id}/archive`** -- Move item to archived directory.
+
+### Heartbeat Integration (`trellis/core/heartbeat.py`)
+
+- **`_check_inbox()` rewrite** -- Now scans `_ivy/inbox/drops/` for unprocessed files, runs each through `InboxProcessor.process_drop()`, moves classified items to `_ivy/inbox/items/`, removes processed drop files, and logs results to journal.
+
+### Testing (`tests/test_inbox.py`)
+
+- 40+ tests covering: confidence tier mapping, serialization round-trips, heuristic classification (task/question/idea/link/note), model-assisted classification with mock router, model failure fallback, urgency detection (immediate/today/queue keywords), role detection (researcher/strategist/writer/organizer/default), vault matching, full process_drop pipeline, file storage operations (save/load/approve/redirect/archive), urgency sort ordering, and all 6 API endpoints (drop/list/detail/approve/redirect/archive) including 404 cases.
+
+---
+
 ## 2026-03-23 — Self-Restart + Graceful Shutdown (MOR-29)
 
 Ivy can now restart herself after code changes — no more manual `systemctl restart`.
