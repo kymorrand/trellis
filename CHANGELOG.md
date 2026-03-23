@@ -1,8 +1,8 @@
 # Changelog
 
-## 2026-03-22 — Sprint 2: Semantic Search, Runtime Hardening, Vault Health
+## 2026-03-22 — Sprint 2: Semantic Search, Gardener Activity, Vault Health
 
-Ivy gains semantic understanding of the vault, the runtime gets fully async plumbing, and the gardener API exposes vault health metrics.
+Ivy gains semantic understanding of the vault, the runtime gets fully async plumbing, and Armando gets a face — the new `/garden` page shows what the dev team has been doing.
 
 ### Semantic Search Pipeline
 
@@ -18,15 +18,36 @@ Ivy gains semantic understanding of the vault, the runtime gets fully async plum
 - **Async Vault Backup** — Nightly backup replaced inline `subprocess.run` with async `vault_backup()` from `trellis/hands/github_client.py` (uses `asyncio.create_subprocess_exec` with pre-push secret scanning). Discord alerts on failure or exception.
 - **Approval Queue Wiring** — `ApprovalQueue` connected to `ToolExecutor` and `AgentBrain`. When the permission system returns ASK, a queue item is created with tool name, input summary, and context instead of soft-denying. Works with or without queue (backward compatible).
 
+### Garden Page (`/garden`)
+
+- **Gardener Activity** (`trellis/static/garden.html`) — 1920x1080 kiosk display showing Armando's development reports. Two-column layout: scrollable report list (left) + health sidebar (right).
+- **Report cards** — Color-coded by agent: Root (`--color-leaf`), Bloom (`--color-wf-yellow`), Thorn (`--color-wf-red`). Agent tags as tinted pill badges. Grouped by date with Recursive Mono uppercase headers.
+- **Garden Health card** — Sidebar card showing knowledge index stats from `GET /api/gardener/health`:
+  - Index coverage bar (6px, GSAP-animated fill, color shifts: green >80%, yellow 50-80%, red <50%)
+  - Four-stat grid: total files, indexed, stale, orphaned
+  - Stale/orphan counts highlight in warn/danger when non-zero
+  - Last-indexed timestamp in relative garden time
+  - Gracefully hidden when endpoint returns 503 (standalone dev mode)
+- **Empty state** — Plant SVG icon + "No reports yet. The garden is quiet."
+- **Cross-page navigation** — Header nav links to Canvas, Brief, and Garden
+- **GSAP entrance animations** — Staggered card fade-up (0.06s intervals), sidebar slides in from right, coverage bar fills after card appears
+
 ### Vault Health API
 
 - **`KnowledgeManager.vault_health()`** — Returns total files, indexed files, stale files (not modified in 90+ days AND under 200 bytes), orphan files (no inbound `[[wikilinks]]`), last indexed timestamp, and index coverage percentage.
+- **`GET /api/gardener/status`** — Returns Armando's development reports (status + garden reports) parsed from `_ivy/reports/`. Agent, type, and date extracted from filenames.
 - **`GET /api/gardener/health`** — New endpoint exposing vault health stats. Returns 503 when knowledge manager is unavailable (standalone web dev mode).
 - **Morning Brief** — Now includes vault health stats (file count, indexed, stale, orphans) when knowledge manager is available, with graceful fallback to simple file count.
+
+### Testing
+
+- **`tests/test_gardener_api.py`** — Tests for gardener status endpoint: empty reports, single status file, garden report, sorting, malformed filenames, fallback summary, missing vault path
 
 ### Dependencies Added
 
 - `sqlite-vec>=0.1.6` — Vector similarity search extension for SQLite
+
+---
 
 ## 2026-03-21 — Living Canvas: Design System + Web Interface
 
