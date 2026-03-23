@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trellis — Inbox</title>
+  <link rel="stylesheet" href="/static/trellis.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="/static/js/trellis-api.js"></script>
+  <script src="/static/js/circadian.js"></script>
+  <style>
+    :root {
+      --bg-top: oklch(93% 0.02 80);
+      --bg-bottom: oklch(90% 0.018 75);
+    }
+    body {
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* Film grain texture */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.3;
+      filter: url(#grain);
+      mix-blend-mode: multiply;
+    }
+
+    .inbox {
+      position: relative;
+      z-index: 2;
+      max-width: 560px;
+      margin: 0 auto;
+      padding: var(--space-6);
+      padding-bottom: var(--space-24);
+    }
+
+    .inbox-nav {
+      display: flex;
+      justify-content: center;
+      padding: var(--space-3) 0 var(--space-2);
+    }
+
+    .inbox-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: var(--space-8) 0 var(--space-6);
+      border-bottom: 1px solid var(--color-wood-light);
+      margin-bottom: var(--space-6);
+    }
+
+    .inbox-header__title {
+      font-family: var(--font-display);
+      font-weight: var(--fraunces-weight);
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 1, "opsz" 36;
+      font-size: var(--text-2xl);
+      color: var(--color-earth);
+      letter-spacing: -0.02em;
+      margin-bottom: var(--space-2);
+    }
+
+    .inbox-header__subtitle {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+      margin-bottom: var(--space-3);
+    }
+
+    .inbox-header__counts {
+      display: flex;
+      gap: var(--space-4);
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+    }
+
+    .inbox-header__count-value {
+      font-weight: 600;
+      color: var(--color-earth);
+    }
+
+    /* ─── Drop Zone ─────────────────────────────────────── */
+
+    .inbox-drop-zone {
+      border: 2px dashed var(--color-wood-light);
+      border-radius: var(--radius-lg);
+      padding: var(--space-6);
+      margin-bottom: var(--space-8);
+      transition: border-color 200ms ease-out, background 200ms ease-out;
+      position: relative;
+    }
+
+    .inbox-drop-zone--dragover {
+      border-color: var(--color-leaf);
+      background: oklch(62% 0.17 145 / 0.06);
+    }
+
+    .inbox-drop-zone__hint {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+      text-align: center;
+      margin-bottom: var(--space-3);
+    }
+
+    .inbox-drop-zone__hint svg {
+      display: block;
+      margin: 0 auto var(--space-2);
+      color: var(--color-wood-light);
+    }
+
+    .inbox-drop-zone__textarea {
+      width: 100%;
+      min-height: 80px;
+      max-height: 300px;
+      padding: var(--space-3);
+      font-family: var(--font-body);
+      font-size: var(--text-base);
+      line-height: 1.6;
+      color: var(--color-earth);
+      background: var(--color-cloud);
+      border: 1px solid var(--color-wood-light);
+      border-radius: var(--radius-md);
+      resize: vertical;
+      outline: none;
+      transition: border-color 150ms ease-out;
+    }
+
+    .inbox-drop-zone__textarea:focus {
+      border-color: var(--color-leaf);
+    }
+
+    .inbox-drop-zone__textarea::placeholder {
+      color: var(--color-earth-light);
+    }
+
+    .inbox-drop-zone__footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: var(--space-3);
+    }
+
+    .inbox-drop-zone__file-info {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+    }
+
+    .inbox-drop-zone__file-info--active {
+      color: var(--color-leaf);
+    }
+
+    .inbox-drop-zone__submit {
+      transform-origin: center;
+    }
+
+    /* ─── Item Feed ─────────────────────────────────────── */
+
+    .inbox-feed {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+
+    .inbox-feed__label {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 24;
+      font-size: var(--text-lg);
+      color: var(--color-earth);
+      margin-bottom: var(--space-1);
+    }
+
+    /* ─── Inbox Card ────────────────────────────────────── */
+
+    .inbox-card {
+      background: var(--color-cloud);
+      border: 1px solid var(--color-wood-light);
+      border-radius: var(--radius-md);
+      padding: var(--space-4);
+      box-shadow: 0 1px 3px oklch(28% 0.02 55 / 0.08);
+      overflow: hidden;
+    }
+
+    .inbox-card__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .inbox-card__summary {
+      font-family: var(--font-body);
+      font-size: var(--text-base);
+      font-weight: 600;
+      color: var(--color-earth);
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .inbox-card__badges {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      flex-shrink: 0;
+    }
+
+    .inbox-card__preview {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+      line-height: 1.5;
+      margin-bottom: var(--space-3);
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .inbox-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-3);
+    }
+
+    .inbox-card__vault-path {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-ivy);
+      background: oklch(74% 0.09 218 / 0.10);
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+    }
+
+    .inbox-card__vault-path svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
+    /* Confidence */
+
+    .confidence-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      padding: 2px var(--space-2);
+      border-radius: var(--radius-lg);
+      line-height: 1;
+    }
+
+    .confidence-badge--green {
+      background: oklch(62% 0.17 145 / 0.12);
+      color: oklch(45% 0.14 152);
+    }
+
+    .confidence-badge--amber {
+      background: oklch(82% 0.15 90 / 0.20);
+      color: oklch(52% 0.12 70);
+    }
+
+    .confidence-badge--red {
+      background: oklch(58% 0.17 28 / 0.12);
+      color: oklch(48% 0.14 25);
+    }
+
+    .confidence-badge__dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .confidence-badge--green .confidence-badge__dot { background: #4CAF50; }
+    .confidence-badge--amber .confidence-badge__dot { background: #F2C94C; }
+    .confidence-badge--red .confidence-badge__dot { background: #EB5757; }
+
+    .confidence-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--color-cloud-dim);
+      margin-bottom: var(--space-3);
+      overflow: hidden;
+    }
+
+    .confidence-bar__fill {
+      height: 100%;
+      border-radius: 2px;
+      transform-origin: left;
+    }
+
+    .confidence-bar__fill--green { background: #4CAF50; }
+    .confidence-bar__fill--amber { background: #F2C94C; }
+    .confidence-bar__fill--red { background: #EB5757; }
+
+    /* Urgency */
+
+    .urgency-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      line-height: 1;
+    }
+
+    /* Role chip */
+
+    .role-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: var(--space-1) var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--text-xs);
+      border-radius: var(--radius-lg);
+      line-height: 1;
+      background: var(--color-cloud-dim);
+      color: var(--color-earth);
+      border: 1px solid var(--color-wood-light);
+    }
+
+    /* Vault matches */
+
+    .vault-matches {
+      margin-bottom: var(--space-3);
+    }
+
+    .vault-matches__toggle {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: var(--space-1) 0;
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+      transition: color 150ms ease-out;
+    }
+
+    .vault-matches__toggle:hover {
+      color: var(--color-earth);
+    }
+
+    .vault-matches__toggle svg {
+      width: 12px;
+      height: 12px;
+      transition: transform 150ms ease-out;
+    }
+
+    .vault-matches__toggle--open svg {
+      transform: rotate(90deg);
+    }
+
+    .vault-matches__list {
+      display: none;
+      flex-direction: column;
+      gap: var(--space-1);
+      padding-top: var(--space-2);
+    }
+
+    .vault-matches__list--open {
+      display: flex;
+    }
+
+    .vault-match {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+      padding: var(--space-2);
+      background: var(--color-cloud-dim);
+      border-radius: var(--radius-sm);
+      line-height: 1.4;
+    }
+
+    .vault-match__path {
+      color: var(--color-ivy);
+      font-weight: 500;
+    }
+
+    .vault-match__snippet {
+      margin-top: 2px;
+      color: var(--color-earth-light);
+    }
+
+    /* Growth timestamps */
+
+    .growth-timestamp {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth-light);
+    }
+
+    /* Actions */
+
+    .inbox-card__actions {
+      display: flex;
+      gap: var(--space-2);
+      padding-top: var(--space-3);
+      border-top: 1px solid oklch(68% 0.06 70 / 0.2);
+    }
+
+    /* Redirect flow */
+
+    .inbox-card__redirect-form {
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      padding-top: var(--space-3);
+    }
+
+    .inbox-card__redirect-form--open {
+      display: flex;
+    }
+
+    .inbox-card__redirect-input {
+      flex: 1;
+      padding: var(--space-1) var(--space-2);
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-xs);
+      color: var(--color-earth);
+      background: var(--color-cloud);
+      border: 1px solid var(--color-wood-light);
+      border-radius: var(--radius-sm);
+      outline: none;
+    }
+
+    .inbox-card__redirect-input:focus {
+      border-color: var(--color-leaf);
+    }
+
+    /* Empty state */
+
+    .inbox-empty {
+      text-align: center;
+      padding: var(--space-12) var(--space-6);
+    }
+
+    .inbox-empty__icon {
+      color: var(--color-wood-light);
+      margin-bottom: var(--space-4);
+    }
+
+    .inbox-empty__title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 24;
+      font-size: var(--text-lg);
+      color: var(--color-earth);
+      margin-bottom: var(--space-2);
+    }
+
+    .inbox-empty__subtitle {
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+    }
+
+    /* Footer */
+
+    .inbox-footer {
+      text-align: center;
+      padding: var(--space-8) 0 var(--space-4);
+      color: var(--color-earth-light);
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+    }
+    .inbox-footer__ivy { color: var(--color-ivy); }
+
+    /* Toast notifications */
+
+    .inbox-toast-container {
+      position: fixed;
+      bottom: var(--space-6);
+      right: var(--space-6);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+  </style>
+</head>
+<body>
+  <!-- Grain SVG filter (same as start.html) -->
+  <svg style="position:absolute;width:0;height:0">
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/></filter>
+  </svg>
+
+  <div class="inbox">
+    <nav class="inbox-nav trellis-nav">
+      <a href="/" class="trellis-nav__link">Start</a>
+      <a href="/canvas" class="trellis-nav__link">Canvas</a>
+      <a href="/brief" class="trellis-nav__link">Brief</a>
+      <a href="/inbox" class="trellis-nav__link trellis-nav__link--active">Inbox</a>
+      <a href="/garden" class="trellis-nav__link">Garden</a>
+    </nav>
+
+    <header class="inbox-header">
+      <h1 class="inbox-header__title">Inbox</h1>
+      <p class="inbox-header__subtitle">Drop anything. Ivy will sort it out.</p>
+      <div class="inbox-header__counts" id="header-counts">
+        <!-- Populated by JS -->
+      </div>
+    </header>
+
+    <!-- Drop Zone -->
+    <div class="inbox-drop-zone" id="drop-zone">
+      <div class="inbox-drop-zone__hint">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M16 6 L16 22 M10 16 L16 22 L22 16"/>
+          <path d="M6 26 L26 26"/>
+        </svg>
+        Drop files here, paste text, or type below
+      </div>
+      <textarea
+        class="inbox-drop-zone__textarea"
+        id="drop-input"
+        placeholder="Paste a URL, drop a thought, capture an idea..."
+        rows="3"
+      ></textarea>
+      <div class="inbox-drop-zone__footer">
+        <span class="inbox-drop-zone__file-info" id="file-info"></span>
+        <button
+          class="trellis-btn trellis-btn--primary trellis-btn--sm inbox-drop-zone__submit"
+          id="drop-submit"
+          disabled
+        >
+          Plant it
+        </button>
+      </div>
+    </div>
+
+    <!-- Item Feed -->
+    <div id="inbox-feed" class="inbox-feed">
+      <!-- Populated by JS -->
+    </div>
+
+    <footer class="inbox-footer">
+      <span class="inbox-footer__ivy">Ivy</span> is listening
+    </footer>
+  </div>
+
+  <!-- Toast container -->
+  <div class="inbox-toast-container" id="toast-container"></div>
+
+  <script>
+    // ─── State ──────────────────────────────────────────
+
+    let pendingFile = null;
+
+    // ─── Drop Zone ──────────────────────────────────────
+
+    const dropZone = document.getElementById('drop-zone');
+    const dropInput = document.getElementById('drop-input');
+    const dropSubmit = document.getElementById('drop-submit');
+    const fileInfo = document.getElementById('file-info');
+
+    // Auto-expanding textarea
+    dropInput.addEventListener('input', () => {
+      dropInput.style.height = 'auto';
+      dropInput.style.height = Math.min(dropInput.scrollHeight, 300) + 'px';
+      updateSubmitState();
+    });
+
+    function updateSubmitState() {
+      const hasContent = dropInput.value.trim().length > 0 || pendingFile;
+      dropSubmit.disabled = !hasContent;
+    }
+
+    // Drag and drop
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('inbox-drop-zone--dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('inbox-drop-zone--dragover');
+      });
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        pendingFile = files[0];
+        fileInfo.textContent = pendingFile.name;
+        fileInfo.classList.add('inbox-drop-zone__file-info--active');
+        updateSubmitState();
+      } else {
+        const text = e.dataTransfer.getData('text');
+        if (text) {
+          dropInput.value = text;
+          dropInput.dispatchEvent(new Event('input'));
+        }
+      }
+    });
+
+    // Paste support
+    dropInput.addEventListener('paste', (e) => {
+      const items = e.clipboardData.items;
+      for (const item of items) {
+        if (item.kind === 'file') {
+          e.preventDefault();
+          pendingFile = item.getAsFile();
+          fileInfo.textContent = pendingFile.name || 'Pasted image';
+          fileInfo.classList.add('inbox-drop-zone__file-info--active');
+          updateSubmitState();
+          return;
+        }
+      }
+      // Text paste is handled natively
+      setTimeout(() => updateSubmitState(), 0);
+    });
+
+    // Submit
+    dropSubmit.addEventListener('click', handleDrop);
+
+    // Ctrl+Enter to submit
+    dropInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleDrop();
+      }
+    });
+
+    async function handleDrop() {
+      const content = dropInput.value.trim();
+      if (!content && !pendingFile) return;
+
+      // Determine content type
+      let contentType = 'text';
+      let dropContent = content;
+
+      if (pendingFile) {
+        contentType = 'file';
+        // For files, include the filename with the content
+        dropContent = content || pendingFile.name;
+      } else if (isUrl(content)) {
+        contentType = 'url';
+      }
+
+      // Animate submit button
+      gsap.to(dropSubmit, {
+        scale: 0.92, duration: 0.1, ease: 'power2.in',
+        onComplete: () => gsap.to(dropSubmit, { scale: 1, duration: 0.3, ease: 'elastic.out(1, 0.5)' })
+      });
+
+      dropSubmit.disabled = true;
+      dropSubmit.textContent = 'Planting...';
+
+      try {
+        const result = await TrellisAPI.inboxDrop(dropContent, contentType, {
+          filename: pendingFile ? pendingFile.name : undefined,
+        });
+
+        // Clear input
+        dropInput.value = '';
+        dropInput.style.height = 'auto';
+        pendingFile = null;
+        fileInfo.textContent = '';
+        fileInfo.classList.remove('inbox-drop-zone__file-info--active');
+
+        // Add the new card to the feed
+        if (result.item) {
+          prependCard(result.item);
+          showToast('Planted and routed', 'success');
+        }
+      } catch (err) {
+        console.error('Drop failed:', err);
+        showToast('Failed to plant item', 'warning');
+      }
+
+      dropSubmit.disabled = false;
+      dropSubmit.textContent = 'Plant it';
+      updateSubmitState();
+    }
+
+    function isUrl(text) {
+      try {
+        const url = new URL(text);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    }
+
+    // ─── Feed Rendering ─────────────────────────────────
+
+    function renderConfidenceBadge(confidence, tier) {
+      const pct = Math.round(confidence * 100);
+      const cls = tier === 'green' ? 'green' : tier === 'amber' ? 'amber' : 'red';
+      return `<span class="confidence-badge confidence-badge--${cls}">
+        <span class="confidence-badge__dot"></span>${pct}%
+      </span>`;
+    }
+
+    function renderConfidenceBar(confidence, tier) {
+      const pct = Math.round(confidence * 100);
+      const cls = tier === 'green' ? 'green' : tier === 'amber' ? 'amber' : 'red';
+      return `<div class="confidence-bar">
+        <div class="confidence-bar__fill confidence-bar__fill--${cls}" data-width="${pct}" style="width: 0%"></div>
+      </div>`;
+    }
+
+    function renderUrgencyBadge(urgency) {
+      const icons = {
+        immediate: '\uD83D\uDD34',
+        today: '\uD83D\uDFE1',
+        queue: '\u26AA',
+      };
+      const labels = {
+        immediate: 'Immediate',
+        today: 'Today',
+        queue: 'Queue',
+      };
+      const icon = icons[urgency] || icons.queue;
+      const label = labels[urgency] || 'Queue';
+      return `<span class="urgency-badge">${icon} ${label}</span>`;
+    }
+
+    function renderRoleChip(role) {
+      if (!role) return '';
+      const label = role.charAt(0).toUpperCase() + role.slice(1);
+      return `<span class="role-chip">${label}</span>`;
+    }
+
+    function renderVaultMatches(matches, itemId) {
+      if (!matches || matches.length === 0) return '';
+      return `<div class="vault-matches">
+        <button class="vault-matches__toggle" onclick="toggleMatches('${itemId}')">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <path d="M4 2 L8 6 L4 10"/>
+          </svg>
+          ${matches.length} related item${matches.length > 1 ? 's' : ''} in vault
+        </button>
+        <div class="vault-matches__list" id="matches-${itemId}">
+          ${matches.map(m => `
+            <div class="vault-match">
+              <div class="vault-match__path">${m.path}</div>
+              ${m.snippet ? `<div class="vault-match__snippet">${truncate(m.snippet, 80)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    }
+
+    function renderGrowthTimestamp(planted, tended) {
+      const parts = [];
+      if (planted) parts.push(formatRelativeTime(planted, 'Planted'));
+      if (tended) parts.push(formatRelativeTime(tended, 'Tended'));
+      return `<span class="growth-timestamp">${parts.join(' \u00B7 ')}</span>`;
+    }
+
+    function formatRelativeTime(isoDate, verb) {
+      const date = new Date(isoDate);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDays = Math.floor(diffHr / 24);
+
+      if (diffSec < 10) return `${verb} just now`;
+      if (diffSec < 60) return `${verb} ${diffSec}s ago`;
+      if (diffMin < 60) return `${verb} ${diffMin}m ago`;
+      if (diffHr < 24) return `${verb} ${diffHr}h ago`;
+      if (diffDays < 7) return `${verb} ${diffDays}d ago`;
+      return TrellisAPI.formatGardenTime(isoDate, verb.toLowerCase());
+    }
+
+    function truncate(text, max) {
+      if (!text || text.length <= max) return text || '';
+      return text.substring(0, max) + '\u2026';
+    }
+
+    function renderCard(item) {
+      const r = item.routing || {};
+      const confidence = r.confidence || 0;
+      const tier = r.confidence_tier || (confidence >= 0.9 ? 'green' : confidence >= 0.7 ? 'amber' : 'red');
+      const urgency = r.urgency || 'queue';
+
+      return `<article class="inbox-card" id="card-${item.id}" data-urgency="${urgency}" data-planted="${item.planted}">
+        ${renderConfidenceBar(confidence, tier)}
+        <div class="inbox-card__header">
+          <span class="inbox-card__summary">${item.summary || 'Processing...'}</span>
+          <div class="inbox-card__badges">
+            ${renderConfidenceBadge(confidence, tier)}
+          </div>
+        </div>
+        <div class="inbox-card__preview">${truncate(item.content, 200)}</div>
+        <div class="inbox-card__meta">
+          ${renderUrgencyBadge(urgency)}
+          ${renderRoleChip(r.role)}
+          ${r.vault_path ? `<span class="inbox-card__vault-path">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M2 4 L2 10 L10 10 L10 4 M2 4 L5 2 L7 2 L10 4"/>
+            </svg>
+            ${r.vault_path}
+          </span>` : ''}
+        </div>
+        ${renderVaultMatches(r.vault_matches, item.id)}
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          ${renderGrowthTimestamp(item.planted, item.tended)}
+        </div>
+        <div class="inbox-card__actions">
+          <button class="trellis-btn trellis-btn--primary trellis-btn--sm" onclick="approveItem('${item.id}', this)">Approve</button>
+          <button class="trellis-btn trellis-btn--ghost trellis-btn--sm" onclick="showRedirect('${item.id}')">Redirect</button>
+          <button class="trellis-btn trellis-btn--ghost trellis-btn--sm" onclick="archiveItem('${item.id}', this)">Archive</button>
+        </div>
+        <div class="inbox-card__redirect-form" id="redirect-${item.id}">
+          <input
+            class="inbox-card__redirect-input"
+            id="redirect-path-${item.id}"
+            type="text"
+            placeholder="vault/path/file.md"
+            value="${r.vault_path || ''}"
+          />
+          <button class="trellis-btn trellis-btn--primary trellis-btn--sm" onclick="confirmRedirect('${item.id}')">Save</button>
+          <button class="trellis-btn trellis-btn--ghost trellis-btn--sm" onclick="hideRedirect('${item.id}')">Cancel</button>
+        </div>
+      </article>`;
+    }
+
+    function prependCard(item) {
+      const feed = document.getElementById('inbox-feed');
+      const emptyState = feed.querySelector('.inbox-empty');
+      if (emptyState) emptyState.remove();
+
+      // Add label if not present
+      if (!feed.querySelector('.inbox-feed__label')) {
+        const label = document.createElement('h2');
+        label.className = 'inbox-feed__label';
+        label.textContent = 'Pending';
+        feed.prepend(label);
+      }
+
+      const tmp = document.createElement('div');
+      tmp.innerHTML = renderCard(item);
+      const card = tmp.firstElementChild;
+      const label = feed.querySelector('.inbox-feed__label');
+      if (label && label.nextSibling) {
+        feed.insertBefore(card, label.nextSibling);
+      } else {
+        feed.appendChild(card);
+      }
+
+      // Animate in
+      gsap.from(card, { opacity: 0, y: 30, duration: 0.4, ease: 'power2.out' });
+
+      // Animate confidence bar fill
+      requestAnimationFrame(() => {
+        const fill = card.querySelector('.confidence-bar__fill');
+        if (fill) {
+          gsap.to(fill, { width: fill.dataset.width + '%', duration: 0.6, ease: 'power2.out', delay: 0.2 });
+        }
+      });
+
+      updateCounts();
+    }
+
+    function renderFeed(items) {
+      const feed = document.getElementById('inbox-feed');
+      feed.innerHTML = '';
+
+      if (!items || items.length === 0) {
+        feed.innerHTML = `<div class="inbox-empty">
+          <div class="inbox-empty__icon">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <path d="M24 12 L24 30"/>
+              <path d="M24 30 C20 26, 16 28, 14 24"/>
+              <path d="M24 30 C28 26, 32 28, 34 24"/>
+              <path d="M24 30 C22 26, 18 27, 16 25"/>
+              <path d="M24 36 L24 42"/>
+            </svg>
+          </div>
+          <h3 class="inbox-empty__title">Nothing planted yet</h3>
+          <p class="inbox-empty__subtitle">Drop text, paste a URL, or drag a file above to get started.</p>
+        </div>`;
+        return;
+      }
+
+      const label = document.createElement('h2');
+      label.className = 'inbox-feed__label';
+      label.textContent = 'Pending';
+      feed.appendChild(label);
+
+      items.forEach((item, i) => {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = renderCard(item);
+        const card = tmp.firstElementChild;
+        feed.appendChild(card);
+
+        // Staggered slide-in animation
+        gsap.from(card, {
+          opacity: 0, y: 30,
+          duration: 0.35,
+          ease: 'power2.out',
+          delay: i * 0.06,
+        });
+
+        // Animate confidence bar fill
+        requestAnimationFrame(() => {
+          const fill = card.querySelector('.confidence-bar__fill');
+          if (fill) {
+            gsap.to(fill, {
+              width: fill.dataset.width + '%',
+              duration: 0.6,
+              ease: 'power2.out',
+              delay: 0.2 + i * 0.06,
+            });
+          }
+        });
+      });
+    }
+
+    // ─── Actions ────────────────────────────────────────
+
+    async function approveItem(id, btn) {
+      const card = document.getElementById('card-' + id);
+      if (!card) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const result = await TrellisAPI.inboxApprove(id);
+        // Shrink and fade out
+        gsap.timeline()
+          .to(card, {
+            backgroundColor: 'oklch(72% 0.16 138 / 0.15)',
+            duration: 0.15,
+          })
+          .to(card, {
+            opacity: 0, scale: 0.96, height: 0,
+            padding: 0, marginBottom: 0,
+            duration: 0.35, ease: 'power2.in',
+            onComplete: () => {
+              card.remove();
+              updateCounts();
+              checkEmpty();
+            },
+          });
+        showToast(`Saved to ${result.saved_to || 'vault'}`, 'success');
+      } catch (err) {
+        console.error('Approve failed:', err);
+        btn.disabled = false;
+        btn.textContent = 'Approve';
+        showToast('Failed to approve', 'warning');
+      }
+    }
+
+    function showRedirect(id) {
+      const form = document.getElementById('redirect-' + id);
+      if (form) {
+        form.classList.add('inbox-card__redirect-form--open');
+        form.querySelector('input').focus();
+      }
+    }
+
+    function hideRedirect(id) {
+      const form = document.getElementById('redirect-' + id);
+      if (form) form.classList.remove('inbox-card__redirect-form--open');
+    }
+
+    async function confirmRedirect(id) {
+      const input = document.getElementById('redirect-path-' + id);
+      const vaultPath = input ? input.value.trim() : '';
+      if (!vaultPath) return;
+
+      const card = document.getElementById('card-' + id);
+      if (!card) return;
+
+      try {
+        const result = await TrellisAPI.inboxRedirect(id, vaultPath);
+        gsap.timeline()
+          .to(card, {
+            backgroundColor: 'oklch(74% 0.09 218 / 0.15)',
+            duration: 0.15,
+          })
+          .to(card, {
+            opacity: 0, x: 30, height: 0,
+            padding: 0, marginBottom: 0,
+            duration: 0.35, ease: 'power2.in',
+            onComplete: () => {
+              card.remove();
+              updateCounts();
+              checkEmpty();
+            },
+          });
+        showToast(`Redirected to ${result.saved_to || vaultPath}`, 'success');
+      } catch (err) {
+        console.error('Redirect failed:', err);
+        showToast('Failed to redirect', 'warning');
+      }
+    }
+
+    async function archiveItem(id, btn) {
+      const card = document.getElementById('card-' + id);
+      if (!card) return;
+
+      btn.disabled = true;
+
+      try {
+        await TrellisAPI.inboxArchive(id);
+        gsap.to(card, {
+          opacity: 0, y: 8, height: 0,
+          padding: 0, marginBottom: 0,
+          duration: 0.3, ease: 'power2.in',
+          onComplete: () => {
+            card.remove();
+            updateCounts();
+            checkEmpty();
+          },
+        });
+        showToast('Archived', 'success');
+      } catch (err) {
+        console.error('Archive failed:', err);
+        btn.disabled = false;
+        showToast('Failed to archive', 'warning');
+      }
+    }
+
+    function toggleMatches(itemId) {
+      const list = document.getElementById('matches-' + itemId);
+      const btn = list.previousElementSibling;
+      const isOpen = list.classList.toggle('vault-matches__list--open');
+      btn.classList.toggle('vault-matches__toggle--open', isOpen);
+    }
+
+    // ─── Counts ─────────────────────────────────────────
+
+    let currentCounts = { pending: 0, today: 0, immediate: 0 };
+
+    function updateCounts(counts) {
+      if (counts) currentCounts = counts;
+
+      const el = document.getElementById('header-counts');
+      const parts = [];
+      if (currentCounts.immediate > 0) {
+        parts.push(`<span><span class="inbox-header__count-value">${currentCounts.immediate}</span> immediate</span>`);
+      }
+      if (currentCounts.today > 0) {
+        parts.push(`<span><span class="inbox-header__count-value">${currentCounts.today}</span> today</span>`);
+      }
+      parts.push(`<span><span class="inbox-header__count-value">${currentCounts.pending}</span> pending</span>`);
+      el.innerHTML = parts.join('');
+    }
+
+    function checkEmpty() {
+      const feed = document.getElementById('inbox-feed');
+      const cards = feed.querySelectorAll('.inbox-card');
+      if (cards.length === 0) {
+        // Decrement pending count
+        currentCounts.pending = 0;
+        updateCounts();
+        renderFeed([]);
+      }
+    }
+
+    // ─── Toast ──────────────────────────────────────────
+
+    function showToast(message, type) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `trellis-toast trellis-toast--${type || 'success'}`;
+      toast.innerHTML = `<span class="trellis-toast__message">${message}</span>`;
+      container.appendChild(toast);
+
+      gsap.from(toast, { opacity: 0, y: 10, duration: 0.25, ease: 'power2.out' });
+      gsap.to(toast, {
+        opacity: 0, y: -10,
+        duration: 0.25, ease: 'power2.in',
+        delay: 2.5,
+        onComplete: () => toast.remove(),
+      });
+    }
+
+    // ─── Drop zone pulse animation ──────────────────────
+
+    function initDropZonePulse() {
+      // Subtle border pulse when idle
+      gsap.to('#drop-zone', {
+        borderColor: 'var(--color-leaf-light)',
+        duration: 2,
+        ease: 'sine.inOut',
+        yoyo: true,
+        repeat: -1,
+        paused: false,
+      });
+    }
+
+    // ─── Initialize ─────────────────────────────────────
+
+    async function init() {
+      TrellisCircadian.init();
+
+      // Animate header entrance
+      gsap.from('.inbox-header', { opacity: 0, y: 20, duration: 0.5, ease: 'power2.out' });
+      gsap.from('.inbox-drop-zone', { opacity: 0, y: 20, duration: 0.5, ease: 'power2.out', delay: 0.1 });
+
+      try {
+        const data = await TrellisAPI.inboxItems();
+        updateCounts(data.counts || { pending: 0, today: 0, immediate: 0 });
+        renderFeed(data.items || []);
+      } catch (e) {
+        console.warn('Failed to fetch inbox items:', e);
+        renderFeed([]);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

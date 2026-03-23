@@ -44,6 +44,50 @@ const TrellisAPI = {
     return res.json();
   },
 
+  // ─── Inbox Methods ──────────────────────────────────
+
+  async inboxItems() {
+    const res = await fetch('/api/inbox/items');
+    return res.json();
+  },
+
+  async inboxDrop(content, contentType, metadata) {
+    const res = await fetch('/api/inbox/drop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: content,
+        content_type: contentType || 'text',
+        metadata: metadata || {},
+      }),
+    });
+    return res.json();
+  },
+
+  async inboxApprove(itemId) {
+    const res = await fetch(`/api/inbox/${itemId}/approve`, { method: 'POST' });
+    return res.json();
+  },
+
+  async inboxRedirect(itemId, vaultPath) {
+    const res = await fetch(`/api/inbox/${itemId}/redirect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vault_path: vaultPath }),
+    });
+    return res.json();
+  },
+
+  async inboxArchive(itemId) {
+    const res = await fetch(`/api/inbox/${itemId}/archive`, { method: 'POST' });
+    return res.json();
+  },
+
+  async inboxDetail(itemId) {
+    const res = await fetch(`/api/inbox/${itemId}`);
+    return res.json();
+  },
+
   /**
    * Connect to the agent state SSE stream.
    * Calls onStateChange(stateDict) on each update.

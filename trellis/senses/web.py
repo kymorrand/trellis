@@ -8,6 +8,7 @@ Pages:
     /        — Start screen (front porch landing page)
     /canvas  — Living Canvas (agent state, vault overview)
     /brief   — Morning Brief (phone-first, approval interface)
+    /inbox   — Inbox (intelligent input triage with approval routing)
     /garden  — Gardener Activity (Armando's development reports)
 
 API:
@@ -155,6 +156,11 @@ def create_app(
     async def brief():
         """Morning Brief — phone-first approval interface."""
         return (STATIC_DIR / "brief.html").read_text(encoding="utf-8")
+
+    @app.get("/inbox", response_class=HTMLResponse)
+    async def inbox():
+        """Inbox — intelligent input triage with approval routing."""
+        return (STATIC_DIR / "inbox.html").read_text(encoding="utf-8")
 
     @app.get("/garden", response_class=HTMLResponse)
     async def garden():

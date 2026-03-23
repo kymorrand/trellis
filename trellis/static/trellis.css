@@ -210,6 +210,10 @@ body {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-leaf-light);
 }
+.trellis-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .trellis-btn--secondary {
   background: var(--color-cloud);
@@ -445,4 +449,121 @@ body {
   border: none;
   border-top: 1px solid var(--color-wood-light);
   margin-top: var(--space-6);
+}
+
+/* ============================================
+   Inbox Components
+   ============================================ */
+
+/* --- Inbox Drop Zone --- */
+.inbox-drop-zone {
+  border: 2px dashed var(--color-wood-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+
+.inbox-drop-zone--dragover {
+  border-color: var(--color-leaf);
+  background: oklch(62% 0.17 145 / 0.06);
+}
+
+/* --- Inbox Card --- */
+.inbox-card {
+  background: var(--color-cloud);
+  border: 1px solid var(--color-wood-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: 0 1px 3px oklch(28% 0.02 55 / 0.08);
+  overflow: hidden;
+}
+
+/* --- Confidence Badge --- */
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-lg);
+  line-height: 1;
+}
+
+.confidence-badge--green {
+  background: oklch(62% 0.17 145 / 0.12);
+  color: oklch(45% 0.14 152);
+}
+
+.confidence-badge--amber {
+  background: oklch(82% 0.15 90 / 0.20);
+  color: oklch(52% 0.12 70);
+}
+
+.confidence-badge--red {
+  background: oklch(58% 0.17 28 / 0.12);
+  color: oklch(48% 0.14 25);
+}
+
+/* --- Confidence Bar --- */
+.confidence-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-cloud-dim);
+  overflow: hidden;
+}
+
+.confidence-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+  transform-origin: left;
+}
+
+.confidence-bar__fill--green { background: #4CAF50; }
+.confidence-bar__fill--amber { background: #F2C94C; }
+.confidence-bar__fill--red { background: #EB5757; }
+
+/* --- Urgency Badge --- */
+.urgency-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+/* --- Role Chip --- */
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  border-radius: var(--radius-lg);
+  line-height: 1;
+  background: var(--color-cloud-dim);
+  color: var(--color-earth);
+  border: 1px solid var(--color-wood-light);
+}
+
+/* --- Vault Match --- */
+.vault-match {
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  color: var(--color-earth-light);
+  padding: var(--space-2);
+  background: var(--color-cloud-dim);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+/* --- Growth Timestamp --- */
+.growth-timestamp {
+  font-family: var(--font-code);
+  font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+  font-size: var(--text-xs);
+  color: var(--color-earth-light);
 }
