@@ -71,6 +71,14 @@ class TestToolDefinitions:
         assert "vault_save" in names
         assert "shell_execute" in names
         assert "journal_read" in names
+        assert "armando_dispatch" in names
+
+    def test_armando_dispatch_schema(self):
+        tool = next(t for t in TOOL_DEFINITIONS if t["name"] == "armando_dispatch")
+        schema = tool["input_schema"]
+        assert "message" in schema["properties"]
+        assert "project_dir" in schema["properties"]
+        assert schema["required"] == ["message", "project_dir"]
 
 
 # --- ToolExecutor ---------------------------------------------------
@@ -206,8 +214,55 @@ class TestToolExecutor:
         assert executor._permission_key("vault_read", {}) == "vault_read"
         assert executor._permission_key("vault_save", {}) == "vault_write"
         assert executor._permission_key("shell_execute", {}) == "shell_whitelisted"
+        assert executor._permission_key("armando_dispatch", {}) == "armando_dispatch"
         assert executor._permission_key("journal_read", {}) == "vault_read"
         assert executor._permission_key("unknown", {}) == "unknown"
+
+    def test_armando_dispatch_permission_is_ask(self):
+        from trellis.security.permissions import check_permission
+        perm = check_permission("armando_dispatch")
+        assert perm == Permission.ASK
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_empty_message(self, executor):
+        # Bypass the permission check (ASK would queue it)
+        result = await executor._armando_dispatch({"message": "", "project_dir": "/tmp"})
+        assert "message is required" in result
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_empty_project_dir(self, executor):
+        result = await executor._armando_dispatch({"message": "do stuff", "project_dir": ""})
+        assert "project_dir is required" in result
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_nonexistent_dir(self, executor):
+        result = await executor._armando_dispatch({
+            "message": "do stuff",
+            "project_dir": "/nonexistent/path/xyz",
+        })
+        assert "does not exist" in result
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_builds_correct_command(self, executor, tmp_path):
+        with patch("trellis.hands.shell.execute_command", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = "Sprint completed."
+            result = await executor._armando_dispatch({
+                "message": "Fix the bug in loop.py",
+                "project_dir": str(tmp_path),
+            })
+            mock_exec.assert_awaited_once()
+            call_args = mock_exec.call_args
+            cmd = call_args[0][0]
+            assert "claude" in cmd
+            assert "--dangerously-skip-permissions" in cmd
+            assert "--agent thorn" in cmd
+            assert "-p" in cmd
+            assert "Fix the bug in loop.py" in cmd
+            assert "--max-budget-usd 5" in cmd
+            assert "--no-session-persistence" in cmd
+            assert call_args[1]["cwd"] == str(tmp_path)
+            assert call_args[1]["timeout"] == 1800
+            assert result == "Sprint completed."
 
     @pytest.mark.asyncio
     async def test_vault_read_truncates_large_file(self, vault):

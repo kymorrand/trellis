@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-22 — Sprint 3: Armando Dispatch Tool (MOR-21)
+
+Ivy can now launch Armando (The Gardener) for development work — the bridge between Kyle's personal agent and his multi-agent dev team.
+
+### Armando Dispatch (`armando_dispatch` tool)
+
+- **Tool definition** (`trellis/core/loop.py`) — New `armando_dispatch` tool in TOOL_DEFINITIONS. Schema: `message` (string) + `project_dir` (string), both required. Description warns about 15-30 min runtime.
+- **Handler** (`trellis/core/loop.py`) — `ToolExecutor._armando_dispatch()` validates inputs (non-empty message, non-empty project_dir, directory exists on disk), builds the `claude` CLI command with `--dangerously-skip-permissions --agent thorn -p {message} --max-budget-usd 5 --no-session-persistence`, calls `execute_command()` with 1800s timeout.
+- **Permission** (`trellis/security/permissions.py`) — `armando_dispatch` set to `Permission.ASK`. Every dispatch requires Kyle's approval via the approval queue.
+- **Shell timeout** (`trellis/hands/shell.py`) — `execute_command()` now accepts an optional `timeout` parameter (default 30s, backward compatible). Also added `"claude"` to `ALLOWED_COMMANDS`.
+
+### Testing
+
+- **`tests/test_loop.py`** — 8 new tests: tool definition presence, schema validation, permission key mapping, ASK permission check, empty message/project_dir validation, nonexistent dir validation, correct command construction (mocked), 1800s timeout passthrough.
+- **`tests/test_shell.py`** — 2 new tests: custom timeout accepted, timeout expiry kills command.
+
+---
+
 ## 2026-03-22 — Sprint 2: Semantic Search, Gardener Activity, Vault Health
 
 Ivy gains semantic understanding of the vault, the runtime gets fully async plumbing, and Armando gets a face — the new `/garden` page shows what the dev team has been doing.

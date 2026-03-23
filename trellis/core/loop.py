@@ -18,6 +18,7 @@ tool use. Local models (Ollama) get the simple chat-only path — no tools.
 from __future__ import annotations
 
 import logging
+import shlex
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -157,6 +158,31 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "armando_dispatch",
+        "description": (
+            "Dispatch Armando (The Gardener) — the multi-agent dev team — to "
+            "execute a development task. Armando is led by Thorn (PM) who "
+            "dispatches Bloom (frontend) and Root (backend). This launches a "
+            "Claude Code session with --agent thorn. WARNING: This runs for "
+            "15-30 minutes and costs API budget. Only use when Kyle asks for "
+            "development work."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The task description for Armando. Be specific about what to build, fix, or change.",
+                },
+                "project_dir": {
+                    "type": "string",
+                    "description": "Absolute path to the project directory (e.g., '/home/kyle/projects/trellis').",
+                },
+            },
+            "required": ["message", "project_dir"],
+        },
+    },
+    {
         "name": "journal_read",
         "description": (
             "Read recent entries from Ivy's daily journal. Useful for "
@@ -269,6 +295,8 @@ class ToolExecutor:
                 return self._vault_save(tool_input)
             case "shell_execute":
                 return await self._shell_execute(tool_input)
+            case "armando_dispatch":
+                return await self._armando_dispatch(tool_input)
             case "journal_read":
                 return self._journal_read(tool_input)
             case _:
@@ -283,6 +311,8 @@ class ToolExecutor:
                 return "vault_write"
             case "shell_execute":
                 return "shell_whitelisted"
+            case "armando_dispatch":
+                return "armando_dispatch"
             case "journal_read":
                 return "vault_read"
             case _:
@@ -339,6 +369,29 @@ class ToolExecutor:
 
         command = tool_input.get("command", "")
         return await execute_command(command, cwd=str(self.vault_path))
+
+    async def _armando_dispatch(self, tool_input: dict) -> str:
+        """Dispatch Armando (The Gardener) to execute a development task."""
+        from trellis.hands.shell import execute_command
+
+        message = tool_input.get("message", "")
+        project_dir = tool_input.get("project_dir", "")
+
+        if not message:
+            return "Error: message is required for Armando dispatch."
+        if not project_dir:
+            return "Error: project_dir is required."
+        if not Path(project_dir).is_dir():
+            return f"Error: project directory does not exist: {project_dir}"
+
+        cmd = (
+            f"claude --dangerously-skip-permissions --agent thorn "
+            f"-p {shlex.quote(message)} "
+            f"--max-budget-usd 5 --no-session-persistence"
+        )
+
+        result = await execute_command(cmd, cwd=project_dir, timeout=1800)
+        return result
 
     def _journal_read(self, tool_input: dict) -> str:
         limit = tool_input.get("limit", 10)

@@ -57,6 +57,9 @@ PERMISSIONS = {
 
     # External communication (email, Slack, Beeper, public posts)
     "external_communication": Permission.DENY,       # Always needs Kyle
+
+    # Armando (dev team dispatch)
+    "armando_dispatch": Permission.ASK,              # Every dispatch needs Kyle's approval
 }
 
 

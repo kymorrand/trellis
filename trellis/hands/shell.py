@@ -27,6 +27,7 @@ ALLOWED_COMMANDS = frozenset({
     "head", "tail", "df", "du", "uptime", "python", "curl",
     "sort", "uniq", "tr", "cut", "stat", "file", "basename",
     "dirname", "realpath", "pwd", "env", "printenv", "whoami",
+    "claude",
 })
 
 # Patterns that are never allowed, regardless of base command
@@ -96,12 +97,15 @@ def validate_command(command: str) -> str | None:
     return None
 
 
-async def execute_command(command: str, cwd: str | None = None) -> str:
+async def execute_command(
+    command: str, cwd: str | None = None, timeout: int = TIMEOUT
+) -> str:
     """Execute a whitelisted shell command with timeout and output limits.
 
     Args:
         command: The shell command to execute.
         cwd: Working directory (defaults to vault path).
+        timeout: Command timeout in seconds (default 30).
 
     Returns:
         Command output (stdout + stderr), truncated if needed.
@@ -124,13 +128,13 @@ async def execute_command(command: str, cwd: str | None = None) -> str:
 
         try:
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=TIMEOUT
+                proc.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             proc.kill()
             await proc.communicate()
-            logger.warning(f"Shell command timed out after {TIMEOUT}s: {command}")
-            return f"Command timed out after {TIMEOUT} seconds."
+            logger.warning(f"Shell command timed out after {timeout}s: {command}")
+            return f"Command timed out after {timeout} seconds."
 
     except OSError as e:
         logger.error(f"Shell execution error: {e}")

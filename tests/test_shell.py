@@ -152,3 +152,17 @@ class TestExecuteCommand:
     async def test_pipe_execution(self):
         result = await execute_command("echo hello world | wc -w")
         assert "2" in result
+
+    @pytest.mark.asyncio
+    async def test_custom_timeout(self):
+        """Custom timeout parameter is accepted and used."""
+        # A fast command with a generous custom timeout should succeed
+        result = await execute_command("echo timeout-test", timeout=60)
+        assert "timeout-test" in result
+
+    @pytest.mark.asyncio
+    async def test_custom_timeout_expires(self):
+        """Command that exceeds the custom timeout is killed."""
+        # Use python (whitelisted) to sleep, triggering the timeout
+        result = await execute_command("python -c 'import time; time.sleep(10)'", timeout=1)
+        assert "timed out" in result.lower()
