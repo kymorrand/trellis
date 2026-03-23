@@ -118,6 +118,10 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 
 ## Discord Commands
 - `!clear` — Clear conversation history
+- `!catch-up` — Context briefing: Ivy gathers git log, recent reports, queue items via tools
+- `!queue` — List pending approval items with IDs
+- `!approve <id>` — Approve a queued item and execute the pending tool call
+- `!deny <id>` — Deny a queued item (moves to dismissed/)
 - `/status` — On-demand status report (uptime, vault stats, API spend, activity)
 - `/local <msg>` — Force local model (Ollama)
 - `/claude <msg>` — Force cloud model (Anthropic)
