@@ -246,7 +246,8 @@ class TestToolExecutor:
 
     @pytest.mark.asyncio
     async def test_armando_dispatch_builds_correct_command(self, executor, tmp_path):
-        with patch("trellis.hands.shell.execute_command", new_callable=AsyncMock) as mock_exec:
+        with patch("trellis.hands.shell.execute_command", new_callable=AsyncMock) as mock_exec, \
+             patch("shutil.which", return_value="/usr/local/bin/claude"):
             mock_exec.return_value = "Sprint completed."
             result = await executor._armando_dispatch({
                 "message": "Fix the bug in loop.py",
@@ -255,7 +256,7 @@ class TestToolExecutor:
             mock_exec.assert_awaited_once()
             call_args = mock_exec.call_args
             cmd = call_args[0][0]
-            assert "claude" in cmd
+            assert cmd.startswith("/usr/local/bin/claude")
             assert "--dangerously-skip-permissions" in cmd
             assert "--agent thorn" in cmd
             assert "-p" in cmd
@@ -265,6 +266,47 @@ class TestToolExecutor:
             assert call_args[1]["cwd"] == str(tmp_path)
             assert call_args[1]["timeout"] == 1800
             assert result == "Sprint completed."
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_uses_shutil_which(self, executor, tmp_path):
+        """When shutil.which finds claude, the full resolved path is used."""
+        with patch("trellis.hands.shell.execute_command", new_callable=AsyncMock) as mock_exec, \
+             patch("shutil.which", return_value="/home/kyle/.local/bin/claude"):
+            mock_exec.return_value = "Done."
+            await executor._armando_dispatch({
+                "message": "test task",
+                "project_dir": str(tmp_path),
+            })
+            cmd = mock_exec.call_args[0][0]
+            assert cmd.startswith("/home/kyle/.local/bin/claude ")
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_fallback_path(self, executor, tmp_path):
+        """When shutil.which returns None but fallback path exists, uses fallback."""
+        fallback = "/home/kyle/.local/bin/claude"
+        with patch("trellis.hands.shell.execute_command", new_callable=AsyncMock) as mock_exec, \
+             patch("shutil.which", return_value=None), \
+             patch("pathlib.Path.is_file", return_value=True):
+            mock_exec.return_value = "Done."
+            await executor._armando_dispatch({
+                "message": "test task",
+                "project_dir": str(tmp_path),
+            })
+            cmd = mock_exec.call_args[0][0]
+            assert cmd.startswith(fallback)
+
+    @pytest.mark.asyncio
+    async def test_armando_dispatch_claude_not_found(self, executor, tmp_path):
+        """When neither shutil.which nor fallback finds claude, returns error."""
+        with patch("shutil.which", return_value=None), \
+             patch("pathlib.Path.is_file", return_value=False), \
+             patch("pathlib.Path.is_dir", return_value=True):
+            result = await executor._armando_dispatch({
+                "message": "test task",
+                "project_dir": str(tmp_path),
+            })
+            assert "claude CLI not found" in result
+            assert "Install it or check PATH" in result
 
     @pytest.mark.asyncio
     async def test_vault_read_truncates_large_file(self, vault):

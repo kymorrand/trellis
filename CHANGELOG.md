@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-23 — Fix claude CLI PATH for armando_dispatch under systemd
+
+When Ivy runs under systemd, `armando_dispatch` failed with `claude: not found` because systemd's minimal PATH doesn't include `~/.local/bin/`.
+
+### Changes
+
+- **Path resolution** (`trellis/core/loop.py`) — `_armando_dispatch()` now resolves the full path to `claude` via `shutil.which()`, with a fallback to `/home/kyle/.local/bin/claude`. Returns a clear error if neither works.
+- **systemd PATH** (`scripts/trellis.service`) — Added `Environment=PATH=...` line so `shutil.which` can find `claude` in the service environment.
+- **Tests** (`tests/test_loop.py`) — 3 new tests: `shutil.which` resolution, fallback path, and not-found error message.
+
+---
+
 ## 2026-03-23 — Auto-Select Single Queue Item for !approve / !deny
 
 `!approve` and `!deny` no longer require an ID when there's only one item in the queue — they auto-select it. With zero items, they report the queue is empty. With 2+ items, they list them and ask Kyle to specify.

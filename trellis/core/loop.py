@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -386,8 +387,17 @@ class ToolExecutor:
         if not Path(project_dir).is_dir():
             return f"Error: project directory does not exist: {project_dir}"
 
+        # Resolve full path to claude CLI — bare 'claude' fails under systemd
+        claude_path = shutil.which("claude")
+        if claude_path is None:
+            fallback = Path("/home/kyle/.local/bin/claude")
+            if fallback.is_file():
+                claude_path = str(fallback)
+            else:
+                return "Error: claude CLI not found. Install it or check PATH."
+
         cmd = (
-            f"claude --dangerously-skip-permissions --agent thorn "
+            f"{claude_path} --dangerously-skip-permissions --agent thorn "
             f"-p {shlex.quote(message)} "
             f"--max-budget-usd 5 --no-session-persistence"
         )
