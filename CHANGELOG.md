@@ -1,8 +1,22 @@
 # Changelog
 
-## 2026-03-22 — Sprint 2: Gardener Activity Page
+## 2026-03-22 — Sprint 2: Semantic Search, Gardener Activity, Vault Health
 
-Armando gets a face. The new `/garden` page shows what the dev team has been doing — status reports, garden reports, and knowledge index health — all visible on Greenhouse's kiosk display.
+Ivy gains semantic understanding of the vault, the runtime gets fully async plumbing, and Armando gets a face — the new `/garden` page shows what the dev team has been doing.
+
+### Semantic Search Pipeline
+
+- **Embeddings** (`trellis/memory/embeddings.py`) — Ollama `/api/embed` integration using nomic-embed-text (768-dim vectors). Async with httpx, 60s timeout, truncates at 32k chars, returns empty list on failure.
+- **Vector Store** (`trellis/memory/vector_store.py`) — SQLite + sqlite-vec for cosine similarity search. `upsert()`, `search()`, `delete()`, `needs_update()` with content-hash dedup.
+- **Hybrid Search** (`trellis/memory/knowledge.py`) — `KnowledgeManager` combines keyword search (30% weight) with vector search (70% weight), normalizes scores, deduplicates by path. Falls back to keyword-only when Ollama is down.
+- **Context Assembly** — `auto_context()` now routes through hybrid search when `KnowledgeManager` is available. `vault_search` tool does the same. Both fall back to keyword-only gracefully.
+- **Background Indexing** — Full vault indexed on startup as a non-blocking async task. Heartbeat reindexes every 6 hours. Unchanged files skipped via content hash.
+
+### Runtime Integration
+
+- **File Watcher** — `FileWatcher` wired as a concurrent async task in the main process alongside Discord bot, web server, and heartbeat. Monitors `_ivy/inbox/` for new files.
+- **Async Vault Backup** — Nightly backup replaced inline `subprocess.run` with async `vault_backup()` from `trellis/hands/github_client.py` (uses `asyncio.create_subprocess_exec` with pre-push secret scanning). Discord alerts on failure or exception.
+- **Approval Queue Wiring** — `ApprovalQueue` connected to `ToolExecutor` and `AgentBrain`. When the permission system returns ASK, a queue item is created with tool name, input summary, and context instead of soft-denying. Works with or without queue (backward compatible).
 
 ### Garden Page (`/garden`)
 
@@ -18,15 +32,20 @@ Armando gets a face. The new `/garden` page shows what the dev team has been doi
 - **Cross-page navigation** — Header nav links to Canvas, Brief, and Garden
 - **GSAP entrance animations** — Staggered card fade-up (0.06s intervals), sidebar slides in from right, coverage bar fills after card appears
 
-### API
+### Vault Health API
 
-- **`GET /api/gardener/status`** — Returns Armando's development reports (status + garden reports) parsed from `_ivy/reports/`. Agent, type, and date extracted from filenames. Title from first `#` heading, summary from first line after first `##` heading.
-- **`GET /api/gardener/health`** — Knowledge index health: total files, indexed files, stale files, orphan files, last indexed timestamp, index coverage percentage. Returns 503 when knowledge manager unavailable.
-- **`/garden` route** added to `web.py` (one-liner serving static HTML)
+- **`KnowledgeManager.vault_health()`** — Returns total files, indexed files, stale files (not modified in 90+ days AND under 200 bytes), orphan files (no inbound `[[wikilinks]]`), last indexed timestamp, and index coverage percentage.
+- **`GET /api/gardener/status`** — Returns Armando's development reports (status + garden reports) parsed from `_ivy/reports/`. Agent, type, and date extracted from filenames.
+- **`GET /api/gardener/health`** — New endpoint exposing vault health stats. Returns 503 when knowledge manager is unavailable (standalone web dev mode).
+- **Morning Brief** — Now includes vault health stats (file count, indexed, stale, orphans) when knowledge manager is available, with graceful fallback to simple file count.
 
 ### Testing
 
 - **`tests/test_gardener_api.py`** — Tests for gardener status endpoint: empty reports, single status file, garden report, sorting, malformed filenames, fallback summary, missing vault path
+
+### Dependencies Added
+
+- `sqlite-vec>=0.1.6` — Vector similarity search extension for SQLite
 
 ---
 

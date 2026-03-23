@@ -8,16 +8,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from trellis.core.loop import (
+    AgentBrain,
     Event,
     MAX_TOOL_ROUNDS,
     TOOL_DEFINITIONS,
     ToolExecutor,
-    AgentBrain,
 )
+
+
+def _mock_usage(input_tokens=100, output_tokens=50):
+    """Create a mock usage object with cache fields."""
+    usage = MagicMock()
+    usage.input_tokens = input_tokens
+    usage.output_tokens = output_tokens
+    usage.cache_read_input_tokens = 0
+    usage.cache_creation_input_tokens = 0
+    return usage
+
 from trellis.security.permissions import Permission
 
 
-# ─── Event ───────────────────────────────────────────────
+# --- Event ---------------------------------------------------------
 
 
 class TestEvent:
@@ -43,7 +54,7 @@ class TestEvent:
         assert e.metadata["key"] == "value"
 
 
-# ─── TOOL_DEFINITIONS ────────────────────────────────────
+# --- TOOL_DEFINITIONS ----------------------------------------------
 
 
 class TestToolDefinitions:
@@ -62,11 +73,11 @@ class TestToolDefinitions:
         assert "journal_read" in names
 
 
-# ─── ToolExecutor ────────────────────────────────────────
+# --- ToolExecutor ---------------------------------------------------
 
 
 class TestToolExecutor:
-    @pytest.fixture
+    @pytest.fixture()
     def vault(self, tmp_path):
         """Minimal vault with journal for testing."""
         # Create vault structure
@@ -87,7 +98,7 @@ class TestToolExecutor:
         # Audit trail dir (needed by log_action)
         return tmp_path
 
-    @pytest.fixture
+    @pytest.fixture()
     def executor(self, vault):
         return ToolExecutor(vault_path=vault)
 
@@ -153,10 +164,27 @@ class TestToolExecutor:
             assert "Permission denied" in result
 
     @pytest.mark.asyncio
-    async def test_ask_permission(self, executor):
+    async def test_ask_permission_no_queue(self, executor):
+        """ASK permission without queue — soft deny with message."""
         with patch("trellis.core.loop.check_permission", return_value=Permission.ASK):
             result = await executor.execute("vault_search", {"query": "test"})
             assert "approval" in result.lower()
+            assert "noted" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_ask_permission_with_queue(self, vault):
+        """ASK permission with queue — creates queue item."""
+        mock_queue = MagicMock()
+        mock_queue.add_item.return_value = "20260322-140000"
+        executor = ToolExecutor(vault_path=vault, approval_queue=mock_queue)
+        with patch("trellis.core.loop.check_permission", return_value=Permission.ASK):
+            result = await executor.execute("vault_search", {"query": "test"})
+            assert "approval" in result.lower()
+            assert "queue" in result.lower()
+            assert "20260322-140000" in result
+            mock_queue.add_item.assert_called_once()
+            call_kwargs = mock_queue.add_item.call_args
+            assert call_kwargs[1]["item_type"] == "tool_approval"
 
     @pytest.mark.asyncio
     async def test_agent_state_updated(self, vault):
@@ -190,12 +218,43 @@ class TestToolExecutor:
         result = await executor.execute("vault_read", {"path": "knowledge/big.md"})
         assert "truncated" in result
 
+    @pytest.mark.asyncio
+    async def test_vault_search_uses_knowledge_manager(self, vault):
+        """When knowledge_manager is provided, vault_search uses hybrid search."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(
+            return_value=[
+                {"path": "knowledge/test-note.md", "matches": ["hybrid result"], "score": 0.9}
+            ]
+        )
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=mock_km)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        mock_km.search.assert_awaited_once()
+        assert "test-note.md" in result
 
-# ─── AgentBrain ──────────────────────────────────────────
+    @pytest.mark.asyncio
+    async def test_vault_search_fallback_when_hybrid_fails(self, vault):
+        """If hybrid search fails, falls back to keyword search."""
+        mock_km = MagicMock()
+        mock_km.search = AsyncMock(side_effect=RuntimeError("Ollama down"))
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=mock_km)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        # Should still work via keyword fallback
+        assert "test-note.md" in result
+
+    @pytest.mark.asyncio
+    async def test_vault_search_without_knowledge_manager(self, vault):
+        """Without knowledge_manager, vault_search uses keyword search only."""
+        executor = ToolExecutor(vault_path=vault, knowledge_manager=None)
+        result = await executor.execute("vault_search", {"query": "testing"})
+        assert "test-note.md" in result
+
+
+# --- AgentBrain ----------------------------------------------------
 
 
 class TestAgentBrain:
-    @pytest.fixture
+    @pytest.fixture()
     def vault(self, tmp_path):
         knowledge = tmp_path / "knowledge"
         knowledge.mkdir()
@@ -204,18 +263,18 @@ class TestAgentBrain:
         journal_dir.mkdir(parents=True)
         return tmp_path
 
-    @pytest.fixture
+    @pytest.fixture()
     def mock_anthropic(self):
         return MagicMock()
 
-    @pytest.fixture
+    @pytest.fixture()
     def mock_router(self):
         router = MagicMock()
         router._session_cost = 0.0
         router.classify = MagicMock(return_value="cloud")
         return router
 
-    @pytest.fixture
+    @pytest.fixture()
     def brain(self, mock_anthropic, mock_router, vault):
         with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
             return AgentBrain(
@@ -228,6 +287,34 @@ class TestAgentBrain:
     def test_construction(self, brain):
         assert brain.system_prompt == "You are a test assistant."
         assert brain._role_name == "_default"
+
+    def test_construction_with_knowledge_manager(self, mock_anthropic, mock_router, vault):
+        """AgentBrain accepts and stores knowledge_manager."""
+        mock_km = MagicMock()
+        with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
+            brain = AgentBrain(
+                anthropic_client=mock_anthropic,
+                router=mock_router,
+                vault_path=vault,
+                system_prompt="Test",
+                knowledge_manager=mock_km,
+            )
+        assert brain.knowledge_manager is mock_km
+        assert brain.tool_executor.knowledge_manager is mock_km
+
+    def test_construction_with_approval_queue(self, mock_anthropic, mock_router, vault):
+        """AgentBrain accepts and stores approval_queue."""
+        mock_queue = MagicMock()
+        with patch("trellis.core.loop.load_role", return_value={"name": "default", "tone": "warm", "autonomy_level": "medium"}):
+            brain = AgentBrain(
+                anthropic_client=mock_anthropic,
+                router=mock_router,
+                vault_path=vault,
+                system_prompt="Test",
+                approval_queue=mock_queue,
+            )
+        assert brain.approval_queue is mock_queue
+        assert brain.tool_executor.approval_queue is mock_queue
 
     def test_set_role_fallback(self, brain):
         """Invalid role should fall back gracefully."""
@@ -251,7 +338,7 @@ class TestAgentBrain:
     async def test_process_routes_to_local(self, brain, mock_router):
         """When router classifies as local, should call router.route."""
         mock_router.classify.return_value = "local"
-        from trellis.mind.router import RouteResult, LOCAL_INDICATOR
+        from trellis.mind.router import LOCAL_INDICATOR, RouteResult
         mock_router.route = AsyncMock(return_value=RouteResult(
             response="local response",
             model_used="qwen3:14b",
@@ -275,12 +362,11 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_text_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         mock_anthropic.messages.create.return_value = mock_response
 
-        event = Event(source="cli", content="analyze something complex")
+        event = Event(source="cli", content="architect something complex")
         result = await brain.process(event, [])
 
         assert result.response == "Hello from Claude!"
@@ -299,8 +385,7 @@ class TestAgentBrain:
 
         mock_response_1 = MagicMock()
         mock_response_1.content = [mock_tool_block]
-        mock_response_1.usage.input_tokens = 100
-        mock_response_1.usage.output_tokens = 50
+        mock_response_1.usage = _mock_usage(100, 50)
 
         # Second response: text
         mock_text_block = MagicMock()
@@ -309,8 +394,7 @@ class TestAgentBrain:
 
         mock_response_2 = MagicMock()
         mock_response_2.content = [mock_text_block]
-        mock_response_2.usage.input_tokens = 200
-        mock_response_2.usage.output_tokens = 80
+        mock_response_2.usage = _mock_usage(200, 80)
 
         mock_anthropic.messages.create.side_effect = [mock_response_1, mock_response_2]
 
@@ -331,13 +415,12 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_tool_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         # Always return tool_use — never text
         mock_anthropic.messages.create.return_value = mock_response
 
-        event = Event(source="cli", content="do something complex")
+        event = Event(source="cli", content="architect something complex")
         result = await brain.process(event, [])
 
         assert "stop here" in result.response.lower() or "need to stop" in result.response.lower()
@@ -356,8 +439,7 @@ class TestAgentBrain:
 
         mock_response = MagicMock()
         mock_response.content = [mock_text_block]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_response.usage = _mock_usage(100, 50)
 
         mock_anthropic.messages.create.return_value = mock_response
 

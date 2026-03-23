@@ -33,7 +33,6 @@ from trellis.hands.vault import (
     search_vault,
 )
 from trellis.memory.journal import log_entry
-from trellis.mind.context import auto_context
 from trellis.mind.router import ModelRouter, RouteResult
 from trellis.mind.soul import load_soul, load_soul_local
 from trellis.security.audit import log_action
@@ -127,6 +126,16 @@ class IvyDiscordBot(discord.Client):
         self.agent_state = agent_state
         self.brain.agent_state = agent_state
         self.brain.tool_executor.agent_state = agent_state
+
+    def set_knowledge_manager(self, knowledge_manager):
+        """Attach the knowledge manager to the brain for hybrid search."""
+        self.brain.knowledge_manager = knowledge_manager
+        self.brain.tool_executor.knowledge_manager = knowledge_manager
+
+    def set_approval_queue(self, approval_queue):
+        """Attach the approval queue for ASK-level permission requests."""
+        self.brain.approval_queue = approval_queue
+        self.brain.tool_executor.approval_queue = approval_queue
 
     def queue_startup_message(self, channel_name: str, message: str):
         """Queue a message to be sent to a specific channel once the bot is ready."""
@@ -229,7 +238,7 @@ class IvyDiscordBot(discord.Client):
         if content.lower() == "!clear":
             self.conversations[message.channel.id] = []
             self._save_conversations()
-            await message.reply("Conversation cleared. Fresh start.")
+            await message.channel.send("Conversation cleared. Fresh start.")
             log_entry(self.vault_path, "COMMAND", f"Cleared history in #{message.channel.name}")
             return
 
@@ -240,7 +249,7 @@ class IvyDiscordBot(discord.Client):
                     report = await self.heartbeat.get_status_report()
                 else:
                     report = "🌱 Heartbeat not running — status unavailable."
-            await message.reply(report)
+            await message.channel.send(report)
             log_entry(self.vault_path, "COMMAND", "Status report requested")
             return
 
@@ -251,7 +260,7 @@ class IvyDiscordBot(discord.Client):
             async with message.channel.typing():
                 reply = await self._handle_vault_save(message.channel.id, content)
             for chunk in _split_message(reply):
-                await message.reply(chunk)
+                await message.channel.send(chunk)
             log_entry(self.vault_path, "VAULT_SAVE", "Save request from Kyle", content)
             if self.agent_state:
                 self.agent_state.set("idle")
@@ -299,14 +308,14 @@ class IvyDiscordBot(discord.Client):
 
         # Discord has a 2000 char limit — split if needed
         for chunk in _split_message(reply_with_indicator):
-            await message.reply(chunk)
+            await message.channel.send(chunk)
 
         # Journal: log Ivy's response
         cost_note = f" (${result.cost_usd:.4f})" if result.cost_usd > 0 else ""
         log_entry(
             self.vault_path,
             "MESSAGE_OUT",
-            f"Ivy → #{message.channel.name} via {result.model_used}{cost_note}",
+            f"Ivy -> #{message.channel.name} via {result.model_used}{cost_note}",
             result.response[:500],
         )
 
@@ -362,8 +371,8 @@ class IvyDiscordBot(discord.Client):
     async def _handle_vault_save(self, channel_id: int, content: str) -> str:
         """Handle a vault save request from Kyle."""
         # Strip the trigger phrase to get the actual content to save
-        # e.g., "remember this: X" → "X"
-        # e.g., "save this — some note" → "some note"
+        # e.g., "remember this: X" -> "X"
+        # e.g., "save this — some note" -> "some note"
         cleaned = SAVE_PATTERNS.sub("", content).strip()
         cleaned = cleaned.lstrip(":—–-").strip()
 

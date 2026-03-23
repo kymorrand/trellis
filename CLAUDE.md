@@ -147,3 +147,16 @@ This means mentioning people, projects, or concepts pulls in vault knowledge wit
 - `schedule` is in deps but heartbeat uses asyncio — don't mix the two
 - Don't modify files outside your agent scope boundary (see above)
 - Don't use `subprocess.run` in async code — use `asyncio.create_subprocess_shell`
+- Don't leave dead code in commits — clean it before pushing. If you wrote a line then replaced it with a better approach, delete the dead one. (Sprint 1: Root left a dead `__hash__`-based sort at web.py:546 that was immediately overwritten by correct stable sorts below it.)
+- Don't skip CHANGELOG updates — every feature shipped needs an entry in `CHANGELOG.md`. Both Root and Bloom missed this on Sprint 1. Add the entry before or alongside your commit, not as an afterthought.
+- `web.py` is shared territory between Bloom (pages/routes) and Root (API endpoints). When both need to touch it in the same sprint, the sprint plan MUST explicitly define who owns which sections. Future sprint should split into `web_pages.py` (Bloom) and `web_api.py` (Root) to eliminate this conflict zone.
+- After merging worktree branches, ALWAYS run this verification sequence:
+  ```
+  source .venv/bin/activate
+  python3 -c "from trellis.senses.web import create_app; print('imports OK')"
+  python -m pytest tests/ -v
+  ruff check .
+  ```
+  Merges can silently drop imports when both branches modify the same file. Sprint 1 lost `import re` and `import os` on first merge.
+- When using `git merge -X theirs` or `-X ours` to resolve conflicts, always verify that imports from the OTHER branch survived. These strategies keep one side's content but can drop the other side's additions to shared sections like import blocks.
+- Don't forget to activate the venv before running any Python commands on Greenhouse: `source ~/projects/trellis/.venv/bin/activate`
