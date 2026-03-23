@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-22 — Sprint 2: Gardener Activity Page
+
+Armando gets a face. The new `/garden` page shows what the dev team has been doing — status reports, garden reports, and knowledge index health — all visible on Greenhouse's kiosk display.
+
+### Garden Page (`/garden`)
+
+- **Gardener Activity** (`trellis/static/garden.html`) — 1920x1080 kiosk display showing Armando's development reports. Two-column layout: scrollable report list (left) + health sidebar (right).
+- **Report cards** — Color-coded by agent: Root (`--color-leaf`), Bloom (`--color-wf-yellow`), Thorn (`--color-wf-red`). Agent tags as tinted pill badges. Grouped by date with Recursive Mono uppercase headers.
+- **Garden Health card** — Sidebar card showing knowledge index stats from `GET /api/gardener/health`:
+  - Index coverage bar (6px, GSAP-animated fill, color shifts: green >80%, yellow 50-80%, red <50%)
+  - Four-stat grid: total files, indexed, stale, orphaned
+  - Stale/orphan counts highlight in warn/danger when non-zero
+  - Last-indexed timestamp in relative garden time
+  - Gracefully hidden when endpoint returns 503 (standalone dev mode)
+- **Empty state** — Plant SVG icon + "No reports yet. The garden is quiet."
+- **Cross-page navigation** — Header nav links to Canvas, Brief, and Garden
+- **GSAP entrance animations** — Staggered card fade-up (0.06s intervals), sidebar slides in from right, coverage bar fills after card appears
+
+### API
+
+- **`GET /api/gardener/status`** — Returns Armando's development reports (status + garden reports) parsed from `_ivy/reports/`. Agent, type, and date extracted from filenames. Title from first `#` heading, summary from first line after first `##` heading.
+- **`GET /api/gardener/health`** — Knowledge index health: total files, indexed files, stale files, orphan files, last indexed timestamp, index coverage percentage. Returns 503 when knowledge manager unavailable.
+- **`/garden` route** added to `web.py` (one-liner serving static HTML)
+
+### Testing
+
+- **`tests/test_gardener_api.py`** — Tests for gardener status endpoint: empty reports, single status file, garden report, sorting, malformed filenames, fallback summary, missing vault path
+
+---
+
 ## 2026-03-21 — Living Canvas: Design System + Web Interface
 
 The Trellis design system and web interface go live. Ivy's heartbeat is now visible on Greenhouse's always-on display.
