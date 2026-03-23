@@ -118,18 +118,17 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      padding-top: var(--space-12);
-      gap: var(--space-6);
+      justify-content: center;
+      gap: var(--space-8);
     }
     .zone-greenhouse::before {
       content: '';
       position: absolute;
-      top: 30%;
+      top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 400px;
-      height: 400px;
+      width: 500px;
+      height: 500px;
       background: radial-gradient(circle, oklch(74% 0.09 218 / 0.06) 0%, transparent 70%);
       pointer-events: none;
       z-index: 0;
@@ -140,13 +139,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: var(--space-4);
+      gap: var(--space-6);
     }
 
     .agent-avatar {
       position: relative;
-      width: 160px;
-      height: 160px;
+      width: 220px;
+      height: 220px;
     }
     .agent-avatar__core { width: 100%; height: 100%; }
     .agent-avatar__ripple {
@@ -161,14 +160,14 @@
 
     .agent-label {
       font-family: var(--font-body);
-      font-size: var(--text-md);
+      font-size: var(--text-xl);
       color: var(--color-earth);
       text-align: center;
     }
     .agent-activity {
       font-family: var(--font-code);
       font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
-      font-size: var(--text-sm);
+      font-size: var(--text-md);
       color: var(--color-earth-light);
       text-align: center;
       min-height: 1.4em;
