@@ -126,6 +126,22 @@
       padding-bottom: var(--space-8);
     }
 
+    @media (min-width: 1200px) {
+      .start-pathways {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto;
+        gap: 2vh;
+        padding-bottom: 0;
+      }
+      .start-pathway {
+        padding: clamp(8px, 1.5vh, 24px) clamp(16px, 2vw, 32px);
+      }
+      .start-pathway__desc {
+        font-size: clamp(0.9rem, 1.8vw, 1.5rem);
+      }
+    }
+
     .start-pathway {
       display: flex;
       align-items: flex-start;
