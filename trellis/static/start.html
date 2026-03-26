@@ -88,7 +88,15 @@
       font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
       font-size: var(--text-sm);
       color: var(--color-earth-light);
-      margin-bottom: var(--space-6);
+      margin-bottom: var(--space-2);
+    }
+
+    .start-hero__clock {
+      font-family: var(--font-code);
+      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
+      font-size: var(--text-sm);
+      color: var(--color-earth-light);
+      margin-bottom: var(--space-3);
     }
 
     .start-hero__status {
@@ -222,6 +230,7 @@
     <header class="start-hero">
       <h1 class="start-hero__greeting" id="greeting">Good evening</h1>
       <div class="start-hero__date" id="hero-date">--</div>
+      <div class="start-hero__clock" id="hero-clock"></div>
       <div class="start-hero__status">
         <span class="start-hero__status-dot" id="status-dot"></span>
         <span id="status-label">connecting...</span>
@@ -344,6 +353,17 @@
       });
     }
 
+    function updateClock() {
+      const now = new Date();
+      let hours = now.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      const hh = String(hours).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('hero-clock').textContent = `${hh}:${mm}:${ss} ${ampm}`;
+    }
+
     function setGreeting() {
       const hour = new Date().getHours();
       let greeting;
@@ -382,6 +402,8 @@
     async function init() {
       TrellisCircadian.init();
       setGreeting();
+      updateClock();
+      setInterval(updateClock, 1000);
 
       // Entrance animations
       gsap.from('.start-nav', {

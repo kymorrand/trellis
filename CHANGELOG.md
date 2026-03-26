@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-03-26 — Start Screen Clock
+
+- **Real-time clock** on Start screen -- displays `HH:MM:SS AM/PM` between the date line and Ivy's status indicator. Updates every second, uses the same Recursive mono font as the date for visual consistency. Animates in with the existing hero entrance.
+
 ## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
 
 Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
