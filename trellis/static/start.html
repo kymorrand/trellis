@@ -42,10 +42,10 @@
       flex-direction: column;
     }
 
-    /* Large screen / kiosk — center content, widen container */
+    /* On kiosk, center content vertically */
     @media (min-width: 1200px) {
       .start {
-        max-width: 1200px;
+        max-width: 560px;
         justify-content: center;
         padding: var(--space-8);
       }
@@ -68,10 +68,7 @@
 
     @media (min-width: 1200px) {
       .start-hero {
-        padding: var(--space-2) 0 var(--space-2);
-      }
-      .start-hero__greeting {
-        font-size: clamp(3rem, 6vw, 8rem);
+        padding: var(--space-8) 0;
       }
     }
 
@@ -79,7 +76,7 @@
       font-family: var(--font-display);
       font-weight: var(--fraunces-weight);
       font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 1, "opsz" 48;
-      font-size: clamp(3rem, 7vw, 10rem);
+      font-size: var(--text-3xl);
       color: var(--color-earth);
       letter-spacing: -0.02em;
       line-height: 1.15;
@@ -89,18 +86,9 @@
     .start-hero__date {
       font-family: var(--font-code);
       font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
-      font-size: clamp(1.2rem, 2.5vw, 3rem);
+      font-size: var(--text-sm);
       color: var(--color-earth-light);
-      margin-bottom: var(--space-2);
-    }
-
-    .start-hero__clock {
-      font-family: var(--font-code);
-      font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
-      font-size: clamp(1.2rem, 2.5vw, 3rem);
-      font-variant-numeric: tabular-nums;
-      color: var(--color-earth-light);
-      margin-bottom: var(--space-3);
+      margin-bottom: var(--space-6);
     }
 
     .start-hero__status {
@@ -108,13 +96,13 @@
       align-items: center;
       gap: var(--space-2);
       font-family: var(--font-body);
-      font-size: clamp(1rem, 2vw, 2rem);
+      font-size: var(--text-sm);
       color: var(--color-ivy);
     }
 
     .start-hero__status-dot {
-      width: clamp(10px, 1.2vw, 20px);
-      height: clamp(10px, 1.2vw, 20px);
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--color-leaf);
       flex-shrink: 0;
@@ -125,31 +113,15 @@
     .start-pathways {
       display: flex;
       flex-direction: column;
-      gap: clamp(16px, 2.5vw, 40px);
+      gap: var(--space-4);
       padding-bottom: var(--space-8);
-    }
-
-    @media (min-width: 1200px) {
-      .start-pathways {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto;
-        gap: 2vh;
-        padding-bottom: 0;
-      }
-      .start-pathway {
-        padding: clamp(8px, 1.5vh, 24px) clamp(16px, 2vw, 32px);
-      }
-      .start-pathway__desc {
-        font-size: clamp(0.9rem, 1.8vw, 1.5rem);
-      }
     }
 
     .start-pathway {
       display: flex;
       align-items: flex-start;
       gap: var(--space-4);
-      padding: clamp(16px, 2vw, 32px) clamp(16px, 2vw, 32px);
+      padding: var(--space-4) var(--space-4);
       border-radius: var(--radius-md);
       text-decoration: none;
       color: inherit;
@@ -161,8 +133,8 @@
     }
 
     .start-pathway__icon {
-      width: clamp(40px, 4vw, 72px);
-      height: clamp(40px, 4vw, 72px);
+      width: 40px;
+      height: 40px;
       flex-shrink: 0;
       margin-top: 2px;
       color: var(--color-ivy);
@@ -182,7 +154,7 @@
       font-family: var(--font-display);
       font-weight: 700;
       font-variation-settings: "SOFT" var(--fraunces-softness), "WONK" 0, "opsz" 24;
-      font-size: clamp(1.25rem, 2.5vw, 2.5rem);
+      font-size: var(--text-md);
       color: var(--color-earth);
       margin-bottom: var(--space-1);
       line-height: 1.3;
@@ -190,7 +162,7 @@
 
     .start-pathway__desc {
       font-family: var(--font-body);
-      font-size: clamp(0.9rem, 1.8vw, 1.6rem);
+      font-size: var(--text-sm);
       color: var(--color-earth-light);
       line-height: 1.5;
     }
@@ -210,13 +182,6 @@
       margin-left: var(--space-2);
     }
 
-    /* Navigation — scale up for start page on large screens */
-    @media (min-width: 1200px) {
-      .start .trellis-nav__link {
-        font-size: clamp(0.7rem, 1.2vw, 1.2rem);
-      }
-    }
-
     /* Footer */
 
     .start-footer {
@@ -228,50 +193,12 @@
     .start-footer__text {
       font-family: var(--font-code);
       font-variation-settings: "CASL" var(--recursive-casual), "MONO" 1;
-      font-size: clamp(0.64rem, 1vw, 1rem);
+      font-size: var(--text-xs);
       color: var(--color-wood-light);
     }
 
     .start-footer__ivy {
       color: var(--color-ivy);
-    }
-
-    /* ---- Kiosk mode — additional ~20% size bump ---- */
-    body.kiosk .start-hero__greeting {
-      font-size: clamp(3.6rem, 6.5vw, 9rem);
-    }
-    body.kiosk .start-hero {
-      padding: var(--space-2) 0 var(--space-2);
-    }
-    body.kiosk .start-hero__date,
-    body.kiosk .start-hero__clock {
-      font-size: clamp(1.4rem, 3vw, 3.6rem);
-    }
-    body.kiosk .start-hero__status {
-      font-size: clamp(1.2rem, 2.4vw, 2.4rem);
-    }
-    body.kiosk .start-hero__status-dot {
-      width: clamp(12px, 1.5vw, 24px);
-      height: clamp(12px, 1.5vw, 24px);
-    }
-    body.kiosk .start-pathway__title {
-      font-size: clamp(1.5rem, 3vw, 3rem);
-    }
-    body.kiosk .start-pathway__desc {
-      font-size: clamp(1.1rem, 2.2vw, 2rem);
-    }
-    body.kiosk .start-pathway__icon {
-      width: clamp(48px, 5vw, 86px);
-      height: clamp(48px, 5vw, 86px);
-    }
-    body.kiosk .start .trellis-nav__link {
-      font-size: clamp(0.85rem, 1.4vw, 1.4rem);
-    }
-    body.kiosk .start-footer__text {
-      font-size: clamp(0.8rem, 1.2vw, 1.2rem);
-    }
-    body.kiosk .start-footer {
-      padding: var(--space-3) 0 var(--space-2);
     }
   </style>
 </head>
@@ -295,7 +222,6 @@
     <header class="start-hero">
       <h1 class="start-hero__greeting" id="greeting">Good evening</h1>
       <div class="start-hero__date" id="hero-date">--</div>
-      <div class="start-hero__clock" id="hero-clock"></div>
       <div class="start-hero__status">
         <span class="start-hero__status-dot" id="status-dot"></span>
         <span id="status-label">connecting...</span>
@@ -418,17 +344,6 @@
       });
     }
 
-    function updateClock() {
-      const now = new Date();
-      let hours = now.getHours();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12 || 12;
-      const hh = String(hours).padStart(2, '0');
-      const mm = String(now.getMinutes()).padStart(2, '0');
-      const ss = String(now.getSeconds()).padStart(2, '0');
-      document.getElementById('hero-clock').textContent = `${hh}:${mm}:${ss} ${ampm}`;
-    }
-
     function setGreeting() {
       const hour = new Date().getHours();
       let greeting;
@@ -465,15 +380,9 @@
     }
 
     async function init() {
-      // Kiosk mode: ?kiosk=true bumps all sizes ~20%
-      if (new URLSearchParams(window.location.search).has('kiosk')) {
-        document.body.classList.add('kiosk');
-      }
-
       TrellisCircadian.init();
       setGreeting();
-      updateClock();
-      setInterval(updateClock, 1000);
+      setInterval(setGreeting, 1000);
 
       // Entrance animations
       gsap.from('.start-nav', {
