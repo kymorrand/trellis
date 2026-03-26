@@ -382,6 +382,7 @@
     async function init() {
       TrellisCircadian.init();
       setGreeting();
+      setInterval(setGreeting, 1000);
 
       // Entrance animations
       gsap.from('.start-nav', {
