@@ -45,7 +45,7 @@
     /* Large screen / kiosk — center content, widen container */
     @media (min-width: 1200px) {
       .start {
-        max-width: 720px;
+        max-width: 1200px;
         justify-content: center;
         padding: var(--space-8);
       }
@@ -68,7 +68,10 @@
 
     @media (min-width: 1200px) {
       .start-hero {
-        padding: var(--space-4) 0 var(--space-6);
+        padding: var(--space-2) 0 var(--space-2);
+      }
+      .start-hero__greeting {
+        font-size: clamp(3rem, 6vw, 8rem);
       }
     }
 
@@ -235,7 +238,10 @@
 
     /* ---- Kiosk mode — additional ~20% size bump ---- */
     body.kiosk .start-hero__greeting {
-      font-size: clamp(3.6rem, 8.5vw, 12rem);
+      font-size: clamp(3.6rem, 6.5vw, 9rem);
+    }
+    body.kiosk .start-hero {
+      padding: var(--space-2) 0 var(--space-2);
     }
     body.kiosk .start-hero__date,
     body.kiosk .start-hero__clock {
@@ -263,6 +269,9 @@
     }
     body.kiosk .start-footer__text {
       font-size: clamp(0.8rem, 1.2vw, 1.2rem);
+    }
+    body.kiosk .start-footer {
+      padding: var(--space-3) 0 var(--space-2);
     }
   </style>
 </head>
