@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-26 — Start Screen Readability for Kiosk Display
+
+- **Viewport-scaled typography** on Start screen -- all text elements now use `clamp()` with `vw` units so they scale from 1080p to 2560x1600. Greeting renders at 80-120px on kiosk, date/clock at 32-48px, status at 24-32px, pathway titles at 28-36px, descriptions at 20-24px.
+- **Container width unlocked** -- large-screen `max-width` increased from 560px to 720px so pathway cards have room to breathe on wide displays.
+- **Vertical centering refined** -- hero padding reduced on large screens (`--space-4` top instead of `--space-8`) to place the greeting cluster at optical center.
+- **Pathway spacing scaled** -- gap and padding use `clamp()` to grow proportionally on larger viewports.
+- **`tabular-nums`** added to clock so digits do not shift as seconds tick.
+- **`body.kiosk` class** -- CSS hook with ~20% size bumps on all key elements. Activated by `?kiosk=true` URL parameter for dedicated ambient display mode.
+- **Nav and footer scaled** -- nav links and footer text use `clamp()` on large screens for proportional readability.
+
 ## 2026-03-26 — Start Screen Clock
 
 - **Real-time clock** on Start screen -- displays `HH:MM:SS AM/PM` between the date line and Ivy's status indicator. Updates every second, uses the same Recursive mono font as the date for visual consistency. Animates in with the existing hero entrance.
