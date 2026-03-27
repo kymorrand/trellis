@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-27 — Screenshot Comparison Overlay Panel (Phase 2)
+
+### Added
+- New `screenshot-compare.js` and `screenshot-compare.css` -- right-docked sidebar panel for comparing DOM captures vs physical display captures from Greenhouse.
+- Panel slides in/out with GSAP animation (falls back to CSS transitions if GSAP unavailable).
+- Display capture loads from `/api/screenshot` (raw PNG endpoint) and renders inline with click-to-open-full-size.
+- DOM capture section shows placeholder ready for Phase 3 Playwright integration. Public API at `window.ScreenshotCompare.setDomCapture()`.
+- Capture history stores last 5 entries with timestamp pills for quick navigation.
+- Visual diff status badge: green (both captures), amber (display only), gray (empty).
+- `Ctrl+D` keyboard shortcut toggles the panel.
+- "Debug" nav link added to all 5 pages -- only visible on localhost or with `?debug` param.
+
+---
+
 ## 2026-03-27 — Fix /api/screenshot to Return Raw PNG
 
 ### Fixed
