@@ -136,13 +136,19 @@ class HeartbeatScheduler:
             now.hour == 8
             and 28 <= now.minute < 35
             and self._last_screenshot_validation != today_str
-            and self.anthropic_client is not None
-            and self.config is not None
         ):
-            self._last_screenshot_validation = today_str
-            await self._run_task(
-                "screenshot_validation", self._screenshot_validation()
-            )
+            if self.anthropic_client is None or self.config is None:
+                if not hasattr(self, "_screenshot_skip_warned"):
+                    logger.warning(
+                        "Heartbeat: screenshot validation disabled "
+                        "— anthropic_client or config not provided"
+                    )
+                    self._screenshot_skip_warned = True
+            else:
+                self._last_screenshot_validation = today_str
+                await self._run_task(
+                    "screenshot_validation", self._screenshot_validation()
+                )
 
         # --- 6:00 PM End of Day ---
         if now.hour == 18 and now.minute < 2 and self._last_eod != today_str:
@@ -248,23 +254,18 @@ class HeartbeatScheduler:
         )
 
         if result.passed:
-            if self._discord_post:
-                await self._discord_post(
-                    f"\u2705 **Daily screenshot validation passed:** {result.summary}"
-                )
+            caption = f"\u2705 **Daily screenshot validation passed:** {result.summary}"
         else:
-            # On failure, post the screenshot with details
-            if self._discord_post_file:
-                await self._discord_post_file(
-                    screenshot_path,
-                    f"\u274c **Daily screenshot validation FAILED**\n"
-                    f"{result.summary}\n\n{result.details}",
-                )
-            elif self._discord_post:
-                await self._discord_post(
-                    f"\u274c **Daily screenshot validation FAILED**\n"
-                    f"{result.summary}\n\n{result.details}"
-                )
+            caption = (
+                f"\u274c **Daily screenshot validation FAILED**\n"
+                f"{result.summary}\n\n{result.details}"
+            )
+
+        # Post the screenshot image with caption (both success and failure)
+        if self._discord_post_file:
+            await self._discord_post_file(screenshot_path, caption)
+        elif self._discord_post:
+            await self._discord_post(caption)
 
     async def _midnight_tasks(self, now: datetime):
         """Run all midnight tasks: backup, journal rollover, cost report."""

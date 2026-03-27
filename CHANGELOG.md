@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-27 — Fix screenshot-to-Discord pipeline wiring
+
+Three bugs prevented the screenshot validation pipeline from working end-to-end despite all individual components functioning correctly.
+
+### Bug Fixes
+
+- **Missing HeartbeatScheduler params** (`scripts/run_discord.py`) — Added `discord_post_file_callback`, `anthropic_client`, and `config` to the HeartbeatScheduler initialization. Without these, screenshot capture and vision validation were silently disabled at runtime.
+- **Silent skip warning** (`trellis/core/heartbeat.py`) — When `anthropic_client` or `config` is not provided, the screenshot validation time window now logs a one-time warning instead of silently skipping. Makes the misconfiguration visible in production logs.
+- **Screenshot image posted on success** (`trellis/core/heartbeat.py`) — Previously, successful validations only posted a text message. Now posts the actual screenshot image with caption in both success and failure cases via `discord_post_file_callback`.
+
+### Testing
+
+- **`tests/test_heartbeat.py`** — 5 new tests: skip warning fires when client missing, skip warning fires only once, success case posts image via post_file, failure case posts image, fallback to text-only when post_file unavailable.
+
+---
+
 ## 2026-03-27 — Sprint 6: Discord Screenshot Posting & Vision Validation
 
 Ivy gains screenshot capture, vision-based validation, and Discord file posting -- a full pipeline from UI capture to AI assessment to team communication.

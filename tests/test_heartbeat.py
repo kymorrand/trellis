@@ -514,3 +514,168 @@ class TestMorningBriefLinear:
 
         brief = discord_post.call_args[0][0]
         assert "1 blocked item" in brief
+
+
+class TestScreenshotValidation:
+    """Tests for screenshot validation wiring and skip-warning behavior."""
+
+    @pytest.mark.asyncio
+    async def test_screenshot_skip_warning_when_client_missing(self, vault):
+        """When anthropic_client is None, a one-time warning should be logged."""
+        discord_post = AsyncMock()
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            anthropic_client=None,
+            config={"vault_path": vault},
+        )
+        # Simulate a tick at 8:30 AM
+        with patch("trellis.core.heartbeat.datetime") as mock_dt:
+            mock_now = datetime(2026, 3, 27, 8, 30, 0)
+            mock_dt.now.return_value = mock_now
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+
+            with patch.object(hb, "_check_inbox", new_callable=AsyncMock):
+                with patch(
+                    "trellis.core.heartbeat.logger"
+                ) as mock_logger:
+                    await hb._tick()
+                    mock_logger.warning.assert_any_call(
+                        "Heartbeat: screenshot validation disabled "
+                        "— anthropic_client or config not provided"
+                    )
+
+    @pytest.mark.asyncio
+    async def test_screenshot_skip_warning_only_once(self, vault):
+        """The skip warning should only fire once, not on every tick."""
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            anthropic_client=None,
+            config={"vault_path": vault},
+        )
+        with patch("trellis.core.heartbeat.datetime") as mock_dt:
+            mock_now = datetime(2026, 3, 27, 8, 30, 0)
+            mock_dt.now.return_value = mock_now
+            mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+
+            with patch.object(hb, "_check_inbox", new_callable=AsyncMock):
+                with patch(
+                    "trellis.core.heartbeat.logger"
+                ) as mock_logger:
+                    await hb._tick()
+                    await hb._tick()
+                    # Warning should be called exactly once across both ticks
+                    warning_calls = [
+                        c
+                        for c in mock_logger.warning.call_args_list
+                        if "screenshot validation disabled" in str(c)
+                    ]
+                    assert len(warning_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_screenshot_success_posts_image(self, vault):
+        """On successful validation, the screenshot image should be posted via post_file."""
+        discord_post = AsyncMock()
+        discord_post_file = AsyncMock()
+        mock_client = MagicMock()
+
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            discord_post_file_callback=discord_post_file,
+            anthropic_client=mock_client,
+            config={"vault_path": vault},
+        )
+
+        mock_screenshot_path = Path("/tmp/screenshot-test.png")
+        mock_validation = MagicMock(
+            passed=True,
+            summary="All checks passed",
+            details="Good layout",
+            cost_usd=0.005,
+        )
+
+        with patch(
+            "trellis.hands.screenshot.capture_and_validate",
+            new_callable=AsyncMock,
+            return_value=(mock_screenshot_path, mock_validation),
+        ):
+            await hb._screenshot_validation()
+
+        # Should use post_file (not just post_to_discord)
+        discord_post_file.assert_called_once()
+        call_args = discord_post_file.call_args
+        assert call_args[0][0] == mock_screenshot_path
+        assert "passed" in call_args[0][1]
+
+        # Should NOT have fallen back to text-only
+        discord_post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_screenshot_failure_posts_image(self, vault):
+        """On failed validation, the screenshot image should also be posted."""
+        discord_post = AsyncMock()
+        discord_post_file = AsyncMock()
+        mock_client = MagicMock()
+
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            discord_post_file_callback=discord_post_file,
+            anthropic_client=mock_client,
+            config={"vault_path": vault},
+        )
+
+        mock_screenshot_path = Path("/tmp/screenshot-fail.png")
+        mock_validation = MagicMock(
+            passed=False,
+            summary="Navigation grid clipped",
+            details="Bottom row overflows viewport",
+            cost_usd=0.005,
+        )
+
+        with patch(
+            "trellis.hands.screenshot.capture_and_validate",
+            new_callable=AsyncMock,
+            return_value=(mock_screenshot_path, mock_validation),
+        ):
+            await hb._screenshot_validation()
+
+        discord_post_file.assert_called_once()
+        call_args = discord_post_file.call_args
+        assert call_args[0][0] == mock_screenshot_path
+        assert "FAILED" in call_args[0][1]
+        assert "Navigation grid clipped" in call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_screenshot_fallback_to_text_without_post_file(self, vault):
+        """When discord_post_file_callback is None, fall back to text-only."""
+        discord_post = AsyncMock()
+        mock_client = MagicMock()
+
+        hb = HeartbeatScheduler(
+            vault_path=vault,
+            discord_post_callback=discord_post,
+            discord_post_file_callback=None,
+            anthropic_client=mock_client,
+            config={"vault_path": vault},
+        )
+
+        mock_screenshot_path = Path("/tmp/screenshot-test.png")
+        mock_validation = MagicMock(
+            passed=True,
+            summary="All checks passed",
+            details="Good",
+            cost_usd=0.005,
+        )
+
+        with patch(
+            "trellis.hands.screenshot.capture_and_validate",
+            new_callable=AsyncMock,
+            return_value=(mock_screenshot_path, mock_validation),
+        ):
+            await hb._screenshot_validation()
+
+        # Should fall back to text-only post
+        discord_post.assert_called_once()
+        assert "passed" in discord_post.call_args[0][0]

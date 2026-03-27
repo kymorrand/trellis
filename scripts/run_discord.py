@@ -97,8 +97,11 @@ async def run_all(config: dict):
         vault_path=config["vault_path"],
         budget_monthly=config.get("budget_monthly", 100.0),
         discord_post_callback=bot.post_to_discord,
+        discord_post_file_callback=bot.post_file,
         knowledge_manager=knowledge_manager,
         linear_client=linear_client,
+        anthropic_client=bot.anthropic_client,
+        config=config,
     )
     bot.set_heartbeat(heartbeat)
 
