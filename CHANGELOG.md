@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-27 — Fix Screenshot Capture Timeout (SSE Stream)
+
+`!screenshot` and `!screenshotnow` Discord commands failed with `TimeoutError` because Playwright's `wait_until="networkidle"` never resolves when the page has a persistent SSE connection (`/api/agent/state/stream`).
+
+### Changes
+
+- **`trellis/hands/screenshot.py`** — Changed `wait_until="networkidle"` to `wait_until="domcontentloaded"` in both `capture_screenshot()` and `capture_screenshot_live()`. Added a 1.5s post-goto render settle sleep so GSAP animations complete before the screenshot is taken.
+- **`tests/test_screenshot_hand.py`** — Added tests verifying both functions use `domcontentloaded` wait strategy.
+
+---
+
 ## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
 
 Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
