@@ -28,6 +28,7 @@ from trellis.hands.github_client import vault_backup
 from trellis.memory.journal import log_entry
 
 if TYPE_CHECKING:
+    import anthropic
     from trellis.hands.linear_client import LinearClient
     from trellis.memory.knowledge import KnowledgeManager
 
@@ -42,14 +43,20 @@ class HeartbeatScheduler:
         vault_path: Path,
         budget_monthly: float = 100.0,
         discord_post_callback=None,
+        discord_post_file_callback=None,
         knowledge_manager: KnowledgeManager | None = None,
         linear_client: LinearClient | None = None,
+        anthropic_client: anthropic.Anthropic | None = None,
+        config: dict | None = None,
     ):
         self.vault_path = Path(vault_path)
         self.budget_monthly = budget_monthly
         self._discord_post = discord_post_callback
+        self._discord_post_file = discord_post_file_callback
         self.knowledge_manager = knowledge_manager
         self.linear_client = linear_client
+        self.anthropic_client = anthropic_client
+        self.config = config
         self._running = False
         self._started_at: datetime | None = None
         self._tick_count = 0
@@ -58,6 +65,7 @@ class HeartbeatScheduler:
         self._last_midnight: str | None = None  # date string of last midnight run
         self._last_morning: str | None = None
         self._last_eod: str | None = None
+        self._last_screenshot_validation: str | None = None
 
     @property
     def started_at(self) -> datetime | None:
@@ -122,6 +130,19 @@ class HeartbeatScheduler:
         if now.hour == 8 and now.minute < 2 and self._last_morning != today_str:
             self._last_morning = today_str
             await self._run_task("morning_brief", self._morning_brief(now))
+
+        # --- 8:30 AM Screenshot Validation (after morning brief) ---
+        if (
+            now.hour == 8
+            and 28 <= now.minute < 35
+            and self._last_screenshot_validation != today_str
+            and self.anthropic_client is not None
+            and self.config is not None
+        ):
+            self._last_screenshot_validation = today_str
+            await self._run_task(
+                "screenshot_validation", self._screenshot_validation()
+            )
 
         # --- 6:00 PM End of Day ---
         if now.hour == 18 and now.minute < 2 and self._last_eod != today_str:
@@ -192,6 +213,58 @@ class HeartbeatScheduler:
             stats["skipped"],
             stats["errors"],
         )
+
+    async def _screenshot_validation(self):
+        """8:30 AM — Capture Start screen and validate with vision."""
+        from trellis.hands.screenshot import capture_and_validate
+
+        logger.info("Heartbeat: running screenshot validation")
+
+        expectations = (
+            "Start screen showing day phase with bright gradient, "
+            "2x2 navigation grid visible, greeting text readable, "
+            "no layout overflow or clipping"
+        )
+
+        try:
+            screenshot_path, result = await capture_and_validate(
+                config=self.config,
+                phase="day",
+                expectations=expectations,
+                anthropic_client=self.anthropic_client,
+            )
+        except Exception as e:
+            logger.error("Screenshot validation capture failed: %s", e, exc_info=True)
+            if self._discord_post:
+                await self._discord_post(
+                    f"\u274c **Screenshot validation failed:** {type(e).__name__}: {e}"
+                )
+            return
+
+        log_entry(
+            self.vault_path,
+            "HEARTBEAT_SCREENSHOT",
+            f"Validation {'passed' if result.passed else 'FAILED'}: {result.summary}",
+        )
+
+        if result.passed:
+            if self._discord_post:
+                await self._discord_post(
+                    f"\u2705 **Daily screenshot validation passed:** {result.summary}"
+                )
+        else:
+            # On failure, post the screenshot with details
+            if self._discord_post_file:
+                await self._discord_post_file(
+                    screenshot_path,
+                    f"\u274c **Daily screenshot validation FAILED**\n"
+                    f"{result.summary}\n\n{result.details}",
+                )
+            elif self._discord_post:
+                await self._discord_post(
+                    f"\u274c **Daily screenshot validation FAILED**\n"
+                    f"{result.summary}\n\n{result.details}"
+                )
 
     async def _midnight_tasks(self, now: datetime):
         """Run all midnight tasks: backup, journal rollover, cost report."""
