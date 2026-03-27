@@ -1,289 +1,219 @@
-# Sprint 4 — Inbox Interface: Intelligent Input Triage with Approval Routing
+# Sprint 5 — Screenshot Regression Testing for Start Screen
 
-**Date:** 2026-03-23
-**Linear:** MOR-31
-**Scope:** Root (backend) + Bloom (frontend) — parallel dispatch
+**Date:** 2026-03-27
+**Scope:** Root (backend/tooling) + Bloom (frontend controls) — parallel dispatch
 **Status:** In Progress
 
 ## Overview
 
-Build the Inbox Interface for Ivy — a "drop anything" intelligent inbox with content
-classification, vault matching, urgency detection, and approval-based routing. Ivy proposes
-where content goes with confidence scores; Kyle approves or redirects.
+Build a screenshot regression testing system that catches visual regressions in the
+Start screen across all circadian phases and viewport sizes. Prevents the work-loss
+cycle where feature iterations overwrite visual improvements (e.g., circadian text
+fix overwrote kiosk display scaling).
+
+## Problem Statement
+
+We keep losing visual changes between feature iterations. Manual checking of each
+circadian phase after changes is error-prone and time-consuming. We need automated
+visual validation before commits.
 
 ---
 
-## web.py Ownership (CRITICAL — shared file)
+## Root — Screenshot Testing Infrastructure
 
-**Root owns these sections in web.py:**
-- `GET /api/inbox/items` — list inbox items with routing proposals
-- `POST /api/inbox/drop` — accept new content (text, URL, file)
-- `POST /api/inbox/{item_id}/approve` — approve proposed routing
-- `POST /api/inbox/{item_id}/redirect` — redirect to different vault location
-- `POST /api/inbox/{item_id}/archive` — archive/dismiss item
-- `GET /api/inbox/{item_id}` — single item detail
+### 1. Dependencies (`pyproject.toml`)
 
-**Bloom owns these sections in web.py:**
-- `GET /inbox` — serve inbox.html page (static file route)
+Add to `[project.optional-dependencies] dev`:
+- `playwright>=1.40.0` — headless browser for screenshot capture
+- `Pillow>=10.0.0` — image comparison and diff generation
 
-**Neither agent touches the other's endpoints. Period.**
+After install: `playwright install chromium` to get the browser binary.
 
----
+### 2. `scripts/screenshot_test.py` (NEW) — CLI Validation Tool
 
-## Root — Backend Implementation
+Single-command tool that validates all circadian phases render correctly.
 
-### 1. `trellis/core/inbox.py` (NEW) — InboxProcessor
+**Usage:**
+```bash
+# Capture baselines (first run or after intentional changes)
+python scripts/screenshot_test.py --baseline
 
-The intelligence engine. Class with these methods:
+# Validate against baselines (pre-commit check)
+python scripts/screenshot_test.py
 
-```python
-class InboxProcessor:
-    def __init__(self, vault, router, config):
-        """Takes vault handler, model router, and config."""
+# Test a single phase
+python scripts/screenshot_test.py --phase evening
 
-    async def process_drop(self, content: str, content_type: str = "text",
-                           metadata: dict = None) -> InboxItem:
-        """Process raw input into a classified inbox item with routing proposal."""
-
-    async def classify_content(self, content: str) -> dict:
-        """Returns: {type, tags[], summary}
-        Types: note, task, reference, question, idea, link, file"""
-
-    async def match_vault(self, content: str) -> list[dict]:
-        """Returns: [{path, relevance_score, snippet}] — top 3 vault matches"""
-
-    async def detect_urgency(self, content: str) -> dict:
-        """Returns: {level: 'immediate'|'today'|'queue', reason: str}
-        Signals: deadlines, names, action words, time references"""
-
-    async def detect_role(self, content: str) -> dict:
-        """Returns: {role: 'researcher'|'strategist'|'writer'|'organizer',
-                     confidence: float, reason: str}"""
-
-    async def propose_routing(self, item: InboxItem) -> RoutingProposal:
-        """Combines all signals into a routing proposal:
-        - vault_path: suggested save location
-        - confidence: 0.0-1.0 (maps to green/amber/red tiers)
-        - urgency: immediate/today/queue
-        - role: which Ivy role fits
-        - vault_matches: related existing content
-        - reasoning: why this routing"""
+# Test a single viewport
+python scripts/screenshot_test.py --viewport kiosk
 ```
 
-**InboxItem dataclass:**
+**Behavior:**
+1. Start the Trellis web server (import `create_app`, run with uvicorn programmatically)
+2. For each phase × viewport combination:
+   a. Navigate to `http://localhost:{port}/`
+   b. Execute `TrellisCircadian.lockToPhase('{phase}')` via page.evaluate()
+   c. Wait for CSS transitions to settle (~500ms)
+   d. If kiosk viewport, also add `?kiosk=true` query param
+   e. Capture full-page screenshot
+3. If `--baseline`: save to `tests/screenshots/baseline/`
+4. If validation: compare against baselines, report failures
+
+**Phases to test:** dawn, day, afternoon, evening, night (5 phases from circadian.js)
+**Viewports:** mobile (375×812), desktop (1440×900), kiosk (2560×1600)
+**Total:** 15 screenshots per run
+
+**File naming:** `{phase}-{viewport}.png` (e.g., `evening-kiosk.png`)
+
+**Exit codes:**
+- 0: all phases match baselines (within threshold)
+- 1: visual diff detected (regression)
+- 2: no baselines found (need `--baseline` first)
+
+### 3. `trellis/testing/__init__.py` + `trellis/testing/screenshot.py` (NEW)
+
+Reusable screenshot comparison module:
+
+```python
+class ScreenshotComparer:
+    """Compare screenshots against baselines with configurable tolerance."""
+
+    def __init__(self, baseline_dir: Path, output_dir: Path, threshold: float = 0.01):
+        """threshold: max allowed pixel diff ratio (0.01 = 1% pixels can differ)"""
+
+    def compare(self, name: str, current: Path) -> CompareResult:
+        """Compare current screenshot against baseline. Returns diff details."""
+
+    def save_baseline(self, name: str, image: Path) -> Path:
+        """Save an image as the new baseline."""
+
+    def generate_diff_image(self, baseline: Path, current: Path) -> Path:
+        """Generate a visual diff image highlighting changed pixels."""
+```
+
+**CompareResult dataclass:**
 ```python
 @dataclass
-class InboxItem:
-    id: str                    # UUID
-    content: str               # Raw input
-    content_type: str          # text, url, file
-    summary: str               # AI-generated one-liner
-    planted: str               # ISO timestamp (not "created")
-    tended: str | None         # ISO timestamp of last action (not "modified")
-    status: str                # pending, approved, redirected, archived
-    routing: RoutingProposal | None
-    metadata: dict             # source info, file details, etc.
+class CompareResult:
+    name: str
+    passed: bool
+    diff_ratio: float      # 0.0 = identical, 1.0 = completely different
+    diff_pixels: int       # absolute count of differing pixels
+    total_pixels: int
+    diff_image: Path | None  # path to visual diff if failed
+    baseline: Path
+    current: Path
 ```
 
-**Storage:** File-based in `_ivy/inbox/items/` as YAML-frontmatter Markdown (same pattern as queue.py).
+### 4. `tests/test_screenshot_system.py` (NEW)
 
-### 2. API Endpoints in web.py
+Tests for the comparison module itself (NOT the visual tests — those are separate):
+- Test CompareResult with identical images → passes
+- Test CompareResult with different images → fails with correct diff ratio
+- Test threshold: small diff below threshold passes, above threshold fails
+- Test diff image generation creates a valid PNG
+- Test baseline save/load cycle
+- Test missing baseline returns appropriate error
 
-Root adds these endpoints (and ONLY these — no page routes):
+### 5. Screenshot baseline storage
 
-- `GET /api/inbox/items` — Returns all pending items with routing proposals, sorted by urgency then planted date
-- `POST /api/inbox/drop` — Accepts `{content, content_type, metadata}`, runs InboxProcessor, returns created item with routing proposal
-- `POST /api/inbox/{item_id}/approve` — Approves routing proposal, moves content to proposed vault path
-- `POST /api/inbox/{item_id}/redirect` — Accepts `{vault_path}`, overrides proposed location, saves there
-- `POST /api/inbox/{item_id}/archive` — Moves to `_ivy/inbox/archived/`
-- `GET /api/inbox/{item_id}` — Full item detail including vault matches
+```
+tests/screenshots/
+├── baseline/           # Committed reference images
+│   ├── dawn-mobile.png
+│   ├── dawn-desktop.png
+│   ├── dawn-kiosk.png
+│   ├── day-mobile.png
+│   ├── ...
+│   └── night-kiosk.png
+├── current/            # Latest run (gitignored)
+└── diffs/              # Visual diffs (gitignored)
+```
 
-### 3. Extend Heartbeat (`trellis/core/heartbeat.py`)
-
-Update `_check_inbox()` to:
-- Scan `_ivy/inbox/drops/` for unprocessed files
-- Run each through InboxProcessor
-- Move processed items to `_ivy/inbox/items/`
-- Log classification results to journal
-
-### 4. Tests (`tests/test_inbox.py`)
-
-- Test InboxProcessor with mocked model responses
-- Test each classification method
-- Test file-based storage (create, read, approve, archive)
-- Test API endpoints
-- Test urgency detection heuristics
-- Test confidence score tiers (90+, 70-89, <70)
+Add to `.gitignore`:
+```
+tests/screenshots/current/
+tests/screenshots/diffs/
+```
 
 ### Root Files
 | File | Action |
 |------|--------|
-| `trellis/core/inbox.py` | CREATE |
-| `trellis/senses/web.py` | MODIFY — add 6 API endpoints only |
-| `trellis/core/heartbeat.py` | MODIFY — extend `_check_inbox()` |
-| `tests/test_inbox.py` | CREATE |
+| `pyproject.toml` | MODIFY — add playwright + Pillow to dev deps |
+| `scripts/screenshot_test.py` | CREATE |
+| `trellis/testing/__init__.py` | CREATE |
+| `trellis/testing/screenshot.py` | CREATE |
+| `tests/test_screenshot_system.py` | CREATE |
+| `.gitignore` | MODIFY — add screenshot working dirs |
 | `CHANGELOG.md` | MODIFY — add entry |
 
 ### Root Does NOT Touch
 - `trellis/static/` — Bloom's scope
+- `trellis/senses/web.py` — no changes needed (start page already served)
 - `agents/ivy/SOUL.md` — Kyle approval required
-- Page routes in web.py — Bloom's scope
 
 ---
 
-## Bloom — Frontend Implementation
+## Bloom — Phase Lock Developer Controls
 
-### 1. `trellis/static/inbox.html` (NEW) — Inbox Page
+### 1. `trellis/static/start.html` — Dev Controls Overlay
 
-**Layout:**
-- Navigation bar (consistent with other pages)
-- Drop zone at top — large, inviting target area
-- Item feed below — cards sorted by urgency, then planted date
-- Empty state when no items
+Add a collapsible developer panel (bottom-right corner, hidden by default) with:
 
-**Drop Zone:**
-- Text input field (auto-expanding textarea)
-- Drag-and-drop area for files
-- Paste support (text, images, URLs)
-- Submit button with GSAP micro-animation
-- Calls `POST /api/inbox/drop` on submission
+- **Phase lock buttons:** Dawn, Day, Afternoon, Evening, Night, Auto (resets to real-time)
+- Toggle with keyboard shortcut: `Shift+D` to show/hide
+- Only visible when `?dev=true` query param is present
+- Current active phase highlighted
+- Compact, doesn't interfere with page layout
+- Uses existing circadian color vars for styling
 
-**Item Cards:**
-Each card shows:
-- Summary (AI-generated one-liner)
-- Content preview (truncated)
-- **Confidence badge:** colored dot/bar
-  - Green (#4CAF50 or `--color-leaf`) for 90%+
-  - Amber (#F2C94C or `--color-earth`) for 70-89%
-  - Red (#EB5757) for <70%
-- **Urgency badge:** 🔴 Immediate | 🟡 Today | ⚪ Queue
-- **Role chip:** Researcher | Strategist | Writer | Organizer
-- **Proposed path:** where Ivy wants to file it
-- **Vault matches:** collapsible list of related content
-- **Growth timestamps:** "Planted 2m ago" / "Tended just now"
-- **Actions:** Approve ✓ | Redirect ↗ | Archive ⊘
+**Implementation:**
+- Call `TrellisCircadian.lockToPhase(phase)` on button click
+- "Auto" button calls `TrellisCircadian.init()` to restore real-time
+- Panel remembers collapsed state in sessionStorage
+- Add `?dev=true` param check in init() to auto-show
 
-**Redirect flow:**
-- Clicking Redirect opens a path input (with vault path autocomplete if feasible, otherwise plain input)
-- Confirm redirects to new path
+### 2. `trellis/static/js/circadian.js` — Background gradient update for lockToPhase
 
-**Animations (GSAP):**
-- Cards slide in from bottom on load
-- Approved cards shrink and fade out
-- Drop zone pulses subtly when dragging over
-- Confidence bar fills on card appearance
+Currently `lockToPhase()` sets color vars and typography but does NOT update the
+background gradient vars (`--bg-top`, `--bg-bottom`). This is needed both for
+manual testing AND for screenshot accuracy.
 
-**Circadian theming:**
-- Uses existing `circadian.js` for time-based colors
-- Fraunces typography with variable Softness axis (reference existing CSS vars)
-
-### 2. `trellis/static/js/trellis-api.js` — Add Inbox Methods
-
-```javascript
-async inboxItems() { /* GET /api/inbox/items */ }
-async inboxDrop(content, contentType, metadata) { /* POST /api/inbox/drop */ }
-async inboxApprove(itemId) { /* POST /api/inbox/{item_id}/approve */ }
-async inboxRedirect(itemId, vaultPath) { /* POST /api/inbox/{item_id}/redirect */ }
-async inboxArchive(itemId) { /* POST /api/inbox/{item_id}/archive */ }
-async inboxDetail(itemId) { /* GET /api/inbox/{item_id} */ }
-```
-
-### 3. `trellis/static/trellis.css` — Inbox Styles
-
-- `.inbox-drop-zone` — large drop target area
-- `.inbox-card` — item card (extends `.trellis-approval-card` pattern)
-- `.confidence-badge` / `.confidence-bar` — colored indicator
-- `.urgency-badge` — emoji + label
-- `.role-chip` — small pill with role name
-- `.vault-match` — collapsible related content
-- `.growth-timestamp` — planted/tended display
-
-### 4. Route in web.py
-
-Bloom adds ONLY:
-- `GET /inbox` → serves `inbox.html`
+Add background gradient values to `lockToPhase()` using the same `bgValues` mapping
+from `generateBgKeyframes()`.
 
 ### Bloom Files
 | File | Action |
 |------|--------|
-| `trellis/static/inbox.html` | CREATE |
-| `trellis/static/js/trellis-api.js` | MODIFY — add 6 inbox methods |
-| `trellis/static/trellis.css` | MODIFY — add inbox component styles |
-| `trellis/senses/web.py` | MODIFY — add `/inbox` page route ONLY |
+| `trellis/static/start.html` | MODIFY — add dev controls overlay |
+| `trellis/static/js/circadian.js` | MODIFY — add bg gradient to lockToPhase |
 
 ### Bloom Does NOT Touch
-- `trellis/core/` — Root's scope
-- `trellis/mind/` — Root's scope
-- `trellis/hands/` — Root's scope
-- `trellis/memory/` — Root's scope
-- `trellis/security/` — Root's scope
-- `trellis/senses/discord_channel.py` — Root's scope
-- API endpoints in web.py — Root's scope
+- `trellis/core/`, `trellis/mind/`, `trellis/hands/`, `trellis/memory/`, `trellis/security/`
+- `trellis/senses/discord_channel.py`
+- API endpoints in web.py
+- `scripts/` — Root's scope for CLI tooling
 
 ---
-
-## API Contract (shared reference for both agents)
-
-### POST /api/inbox/drop
-**Request:** `{content: str, content_type: "text"|"url"|"file", metadata?: {}}`
-**Response:**
-```json
-{
-  "item": {
-    "id": "uuid",
-    "content": "raw text",
-    "content_type": "text",
-    "summary": "AI-generated summary",
-    "planted": "2026-03-23T14:30:00Z",
-    "tended": null,
-    "status": "pending",
-    "routing": {
-      "vault_path": "knowledge/projects/trellis/inbox-design.md",
-      "confidence": 0.92,
-      "confidence_tier": "green",
-      "urgency": "today",
-      "role": "organizer",
-      "vault_matches": [
-        {"path": "knowledge/projects/trellis.md", "relevance": 0.85, "snippet": "..."}
-      ],
-      "reasoning": "Project-related content about Trellis inbox design"
-    }
-  }
-}
-```
-
-### GET /api/inbox/items
-**Response:** `{items: InboxItem[], counts: {pending: N, today: N, immediate: N}}`
-
-### POST /api/inbox/{item_id}/approve
-**Response:** `{item: InboxItem, saved_to: "vault/path.md"}`
-
-### POST /api/inbox/{item_id}/redirect
-**Request:** `{vault_path: "new/path.md"}`
-**Response:** `{item: InboxItem, saved_to: "new/path.md"}`
-
-### POST /api/inbox/{item_id}/archive
-**Response:** `{item: InboxItem, archived_to: "_ivy/inbox/archived/..."}`
-
----
-
-## Acceptance Criteria
-
-1. Drop text into inbox → Ivy classifies, proposes routing with confidence score
-2. Confidence visualization works: green/amber/red tiers render correctly
-3. Urgency badges display: 🔴 Immediate | 🟡 Today | ⚪ Queue
-4. Role detection shows which Ivy role would handle the content
-5. Approve → content saved to proposed vault path
-6. Redirect → content saved to specified path instead
-7. Archive → content moved to archived directory
-8. Vault matches show related existing content
-9. Growth timestamps show "planted/tended" language
-10. Circadian theming applies to inbox page
-11. GSAP animations on card transitions
-12. All tests pass, lint clean, CHANGELOG updated
-13. Heartbeat picks up unprocessed drops and classifies them
 
 ## Dependency Order
 
-Root and Bloom can work **in parallel** — Bloom builds against the API contract above.
-The contract is the source of truth. If Root needs to deviate, the sprint plan gets updated.
+**Root and Bloom work in parallel.** No dependencies between their changes.
+
+Root's screenshot tool uses `page.evaluate('TrellisCircadian.lockToPhase(...)')` which
+already exists. Bloom's enhancement to lockToPhase (adding background gradients) makes
+screenshots more accurate but isn't blocking — Root can capture baselines after Bloom's
+change lands.
+
+## Acceptance Criteria
+
+1. `python scripts/screenshot_test.py --baseline` captures 15 screenshots (5 phases × 3 viewports)
+2. `python scripts/screenshot_test.py` validates all phases match baselines → exit 0
+3. Modifying CSS and re-running → detects regression → exit 1
+4. Visual diff images generated for failures showing exactly what changed
+5. Dev controls visible with `?dev=true`, hidden otherwise
+6. Phase lock buttons correctly switch circadian phase including background gradient
+7. Shift+D toggles dev panel visibility
+8. All existing tests still pass
+9. Lint clean
+10. CHANGELOG updated

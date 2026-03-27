@@ -45,6 +45,7 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 - `trellis/mind/router.py` — Hybrid model routing (Ollama local / Claude cloud)
 - `trellis/hands/shell.py` — Sandboxed shell execution (whitelist + audit)
 - `trellis/hands/vault.py` — Obsidian vault read/write/search
+- `trellis/hands/screenshot.py` — Screenshot capture (async Playwright) + vision validation
 - `trellis/memory/compactor.py` — Conversation history compression
 - `trellis/security/permissions.py` — Action permission system (ALLOW/ASK/DENY)
 - `trellis/senses/discord_channel.py` — Discord bot (uses AgentBrain for ReAct loop)
@@ -114,6 +115,7 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 - **Midnight** — Nightly vault backup (git add/commit/push), journal rollover, cost report
 - **8:00 AM** — Morning brief posted to Discord (overnight activity, queue, vault stats)
 - **6:00 PM** — End of day summary posted to Discord (messages, saves, API cost)
+- **8:30 AM** — Screenshot validation: captures Start screen, validates with Claude vision, posts to Discord (requires `anthropic_client` and `config` passed to HeartbeatScheduler)
 - **Budget alerts** — Warns on Discord if monthly API spend exceeds 75% of IVY_BUDGET_MONTHLY
 
 ## Discord Commands
@@ -125,6 +127,7 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 - `/status` — On-demand status report (uptime, vault stats, API spend, activity)
 - `/local <msg>` — Force local model (Ollama)
 - `/claude <msg>` — Force cloud model (Anthropic)
+- `!screenshot [phase]` — Capture Start screen, validate with vision, post to channel
 - `remember this: <content>` — Save to vault
 
 ## Auto-Context Assembly
@@ -196,3 +199,5 @@ any new CLAUDE.md rules. If no rules were added, the section says "None — clea
 - Never launch Ivy via `nohup python scripts/run_discord.py &` — always use `sudo systemctl restart trellis.service`. Rogue nohup processes survive restarts and create duplicate bot connections to Discord. (Sprint 3: zombie process caused every message to get two replies.)
 - After restarting Ivy's service, always verify single-instance: `ps aux | grep run_discord | grep -v grep` should show exactly one Python process.
 - Don't strip existing `# noqa` comments from files — they're there for a reason. If you're adding an import next to suppressed lines, add the same suppression. (MOR-19: Root stripped `# noqa: E402` from `scripts/run_discord.py`, causing 9 lint failures.)
+- Don't use `wait_until="networkidle"` with Playwright on Trellis pages — every page opens an SSE connection (`/api/agent/state/stream`) that never closes, so `networkidle` will always timeout. Use `wait_until="domcontentloaded"` + a settle sleep instead. (Sprint 6: both `!screenshot` and `!screenshotnow` were DOA because of this.)
+- Don't nuke CHANGELOG history when adding entries — prepend new entries at the top, don't replace the file. (Sprint 6: Root deleted the entire CHANGELOG from Sprint 1-5 when adding the SSE timeout fix entry.)
