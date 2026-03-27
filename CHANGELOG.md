@@ -11,6 +11,126 @@
 
 ---
 
+## 2026-03-27 — `!screenshotnow` Discord Command
+
+On-demand live screenshot capture from the running Trellis web server, posted directly to a designated Discord channel.
+
+### `capture_screenshot_live()` (`trellis/hands/screenshot.py`)
+
+- **New function** — Captures a screenshot from the already-running Trellis web server (port 8420) via async Playwright. Unlike `capture_screenshot()`, this does NOT spin up a temporary server. Saves to `_ivy/screenshots/live-{timestamp}.png`. 15-second page load timeout with networkidle wait.
+
+### `post_file_to_channel_id()` (`trellis/senses/discord_channel.py`)
+
+- **New method** on `IvyDiscordBot` — Posts a file to a Discord channel by numeric ID. Uses `get_channel()` with `fetch_channel()` fallback. Handles NotFound and Forbidden gracefully.
+
+### `!screenshotnow` Command (`trellis/senses/discord_channel.py`)
+
+- **New Discord command** — Captures a live screenshot and posts it to channel `1487076264450981999` with timestamp and hostname metadata. Sends a confirmation to the source channel if different from the target. Error handling for server unreachable and Playwright failures.
+
+### Testing (`tests/test_screenshot_hand.py`)
+
+- 11 new tests: `capture_screenshot_live` (path format, port, viewport, page path, no temp server), `post_file_to_channel_id` (cached channel, fetch fallback, not-found handling), `!screenshotnow` command (capture + post flow, confirmation message, error handling).
+
+---
+
+## 2026-03-27 — Fix screenshot-to-Discord pipeline wiring
+
+Three bugs prevented the screenshot validation pipeline from working end-to-end despite all individual components functioning correctly.
+
+### Bug Fixes
+
+- **Missing HeartbeatScheduler params** (`scripts/run_discord.py`) — Added `discord_post_file_callback`, `anthropic_client`, and `config` to the HeartbeatScheduler initialization. Without these, screenshot capture and vision validation were silently disabled at runtime.
+- **Silent skip warning** (`trellis/core/heartbeat.py`) — When `anthropic_client` or `config` is not provided, the screenshot validation time window now logs a one-time warning instead of silently skipping. Makes the misconfiguration visible in production logs.
+- **Screenshot image posted on success** (`trellis/core/heartbeat.py`) — Previously, successful validations only posted a text message. Now posts the actual screenshot image with caption in both success and failure cases via `discord_post_file_callback`.
+
+### Testing
+
+- **`tests/test_heartbeat.py`** — 5 new tests: skip warning fires when client missing, skip warning fires only once, success case posts image via post_file, failure case posts image, fallback to text-only when post_file unavailable.
+
+---
+
+## 2026-03-27 — Sprint 6: Discord Screenshot Posting & Vision Validation
+
+Ivy gains screenshot capture, vision-based validation, and Discord file posting -- a full pipeline from UI capture to AI assessment to team communication.
+
+### Screenshot Hand (`trellis/hands/screenshot.py`)
+
+- **`capture_screenshot()`** — Async function that spins up a temporary Uvicorn server, uses async Playwright to navigate and capture, supports phase locking via circadian JS, and saves timestamped PNGs to `{vault_path}/_ivy/screenshots/`.
+- **`capture_start_screen()`** — Convenience wrapper for capturing the Start screen at a specific circadian phase and viewport.
+- **`validate_screenshot()`** — Sends a screenshot to Claude vision (claude-sonnet-4-20250514) with natural-language expectations, parses structured pass/fail response, tracks API cost.
+- **`capture_and_validate()`** — Combined convenience function: capture then validate in one call.
+- **`ValidationResult`** dataclass — `passed`, `summary`, `details`, `cost_usd`.
+
+### Discord File Posting (`trellis/senses/discord_channel.py`)
+
+- **`post_file()`** — Posts a file (image) to the primary channel with optional text message.
+- **`post_file_to_channel()`** — Posts a file to a named channel by name.
+- **`!screenshot [phase]`** command — Kyle types `!screenshot evening`, Ivy captures the Start screen at that phase, validates with vision, and posts the screenshot + validation summary to the channel. Shows typing indicator during capture.
+
+### Heartbeat Integration (`trellis/core/heartbeat.py`)
+
+- **`_screenshot_validation()`** task — Runs daily at 8:30 AM (after morning brief). Captures Start screen in "day" phase, validates layout/content, posts results to Discord. On failure, posts the screenshot image with details.
+- **`discord_post_file_callback`** — New constructor parameter for file posting from heartbeat tasks.
+- **`anthropic_client` / `config`** — New constructor parameters enabling vision API access from scheduled tasks.
+
+### Testing (`tests/test_screenshot_hand.py`)
+
+- 22 tests covering: ValidationResult dataclass, capture with mocked Playwright (path return, phase lock, no-phase skip, custom viewport), vision validation (JSON parsing, code fence handling, invalid JSON fallback, async wrapper), capture_and_validate integration, Discord file posting (primary channel, missing channel, named channel), !screenshot command handler, heartbeat scheduling (trigger at 8:30, skip without client, callback storage), viewport config.
+
+---
+
+---
+
+## 2026-03-27 — Sprint 5: Screenshot Regression Testing
+
+Visual regression testing infrastructure for the Trellis web interface. Captures screenshots across all circadian phases and viewport sizes, then compares against saved baselines to catch unintended visual changes.
+
+### Screenshot Comparer (`trellis/testing/screenshot.py`)
+
+- **`ScreenshotComparer`** class -- pixel-level image comparison with configurable diff threshold. Uses Pillow for image loading and comparison.
+- **`CompareResult`** dataclass -- holds pass/fail status, diff ratio, pixel counts, and paths to baseline, current, and diff images.
+- **Diff image generation** -- highlights changed pixels in red on a dimmed version of the baseline for easy visual identification.
+
+### CLI Tool (`scripts/screenshot_test.py`)
+
+- **`--baseline` mode** -- captures reference screenshots for all phase x viewport combinations (15 total: 5 phases x 3 viewports).
+- **Validation mode** -- compares current screenshots against baselines, reports diff percentages, generates diff images for failures, exits with appropriate code (0=pass, 1=fail, 2=no baselines).
+- **Filtering** -- `--phase` and `--viewport` flags for testing individual combinations.
+- **Viewports** -- mobile (375x812), desktop (1440x900), kiosk (2560x1600 with `?kiosk=true`).
+- **Circadian locking** -- uses `TrellisCircadian.lockToPhase()` to capture each phase deterministically.
+- **Self-contained** -- starts web server programmatically via uvicorn in a thread, finds free port automatically.
+
+### Phase Lock Dev Controls (`trellis/static/start.html` + `circadian.js`)
+
+- **Dev panel overlay** -- floating panel with Dawn/Day/Afternoon/Evening/Night/Auto buttons. Visible with `?dev=true`, toggles with Shift+D.
+- **Background gradient fix** -- `lockToPhase()` now sets `--bg-top` and `--bg-bottom` CSS vars (previously only set color palette + typography).
+
+### Testing (`tests/test_screenshot_system.py`)
+
+- 20 unit tests covering: identical image comparison, completely different images, partial diffs with correct ratio calculation, threshold boundary behavior (below/at/above/zero/high), diff image generation (valid PNG, red highlights, dimmed unchanged pixels, not generated on pass), missing baseline error handling, save_baseline operations, CompareResult dataclass fields.
+
+### Dependencies Added
+
+- `playwright>=1.40.0` (dev) -- browser automation for screenshot capture
+- `Pillow>=10.0.0` (dev) -- image loading, comparison, and diff generation
+
+---
+
+## 2026-03-26 — Start Screen Readability for Kiosk Display
+
+- **Viewport-scaled typography** on Start screen -- all text elements now use `clamp()` with `vw` units so they scale from 1080p to 2560x1600. Greeting renders at 80-120px on kiosk, date/clock at 32-48px, status at 24-32px, pathway titles at 28-36px, descriptions at 20-24px.
+- **Container width unlocked** -- large-screen `max-width` increased from 560px to 720px so pathway cards have room to breathe on wide displays.
+- **Vertical centering refined** -- hero padding reduced on large screens (`--space-4` top instead of `--space-8`) to place the greeting cluster at optical center.
+- **Pathway spacing scaled** -- gap and padding use `clamp()` to grow proportionally on larger viewports.
+- **`tabular-nums`** added to clock so digits do not shift as seconds tick.
+- **`body.kiosk` class** -- CSS hook with ~20% size bumps on all key elements. Activated by `?kiosk=true` URL parameter for dedicated ambient display mode.
+- **Nav and footer scaled** -- nav links and footer text use `clamp()` on large screens for proportional readability.
+
+## 2026-03-26 — Start Screen Clock
+
+- **Real-time clock** on Start screen -- displays `HH:MM:SS AM/PM` between the date line and Ivy's status indicator. Updates every second, uses the same Recursive mono font as the date for visual consistency. Animates in with the existing hero entrance.
+
+---
 ## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
 
 Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
