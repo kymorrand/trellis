@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-03-27 — Display Capture System (Physical Monitor)
+
+New display capture system using `mss` that grabs the actual physical screen (what Kyle sees on Greenhouse's monitor), exposed via a FastAPI endpoint. Complements the existing Playwright screenshot system which captures headless DOM "code reality."
+
+### Display Capture Module (`trellis/hands/display_capture.py`)
+
+- **`capture_display(monitor)`** — Captures the primary display (or specified monitor index) using mss. Converts BGRA to RGB PNG via Pillow. Returns `DisplayCapture` dataclass with image bytes, dimensions, monitor info, and timestamp.
+- **`list_monitors()`** — Returns all available monitors with dimensions. Index 0 is the virtual "all monitors" screen, index 1+ are physical displays.
+- **`save_temp_screenshot()`** / **`cleanup_temp_screenshots()`** — Temp file management with configurable max file limit (default 50).
+
+### API Endpoint (`POST /api/screenshot`)
+
+- Request body (optional): `{"monitor": null}` to select monitor index.
+- Response: base64-encoded PNG image with metadata (timestamp, display dimensions, monitor count).
+- Runs synchronous mss capture in an executor to avoid blocking the async event loop.
+- Returns 500 with error message on capture failure.
+
+### Dependencies
+
+- `mss>=9.0.0` added to `[project.optional-dependencies] dev`
+
+### Testing (`tests/test_display_capture.py`)
+
+- 15 tests covering: list_monitors (count, fields, primary index), capture_display (return type, dimensions, PNG format, monitor info, timestamp, default monitor, invalid index, failure handling), cleanup (over/under limit), save_temp_screenshot (file creation, cleanup trigger), and API endpoint (response structure, error handling).
+
+---
+
 ## 2026-03-27 — Fix Screenshot Capture Timeout (SSE Stream)
 
 `!screenshot` and `!screenshotnow` Discord commands failed with `TimeoutError` because Playwright's `wait_until="networkidle"` never resolves when the page has a persistent SSE connection (`/api/agent/state/stream`).

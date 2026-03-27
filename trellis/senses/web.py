@@ -29,6 +29,7 @@ API:
     /api/inbox/{id}/redirect — Override vault path (POST)
     /api/inbox/{id}/archive  — Archive/dismiss item (POST)
     /api/inbox/{id}          — Single item detail (GET)
+    /api/screenshot          — Capture physical display (POST)
 """
 
 from __future__ import annotations
@@ -42,9 +43,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+import base64
+
 from pydantic import BaseModel
+
+from trellis.hands.display_capture import capture_display, list_monitors
 
 if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
@@ -722,6 +727,40 @@ def create_app(
             log_entry(vault_path, "INBOX_ARCHIVE", f"Archived inbox item {item_id}")
 
         return {"item": _inbox_item_to_dict(item), "archived_to": archived_to}
+
+    # --- Display Capture ---
+
+    class ScreenshotRequest(BaseModel):
+        monitor: int | None = None
+
+    @app.post("/api/screenshot")
+    async def api_screenshot(body: ScreenshotRequest | None = None):
+        """Capture the physical display using mss."""
+        monitor_idx = body.monitor if body else None
+
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, lambda: capture_display(monitor_idx)
+            )
+            monitors = await loop.run_in_executor(None, list_monitors)
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+
+        image_b64 = base64.b64encode(result.image_bytes).decode("ascii")
+
+        return {
+            "image": image_b64,
+            "metadata": {
+                "timestamp": result.timestamp,
+                "display": {
+                    "width": result.width,
+                    "height": result.height,
+                    "monitor": result.monitor_info.get("index", 1),
+                },
+                "monitors_available": len(monitors),
+            },
+        }
 
     return app
 
