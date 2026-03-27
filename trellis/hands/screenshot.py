@@ -149,7 +149,10 @@ async def capture_screenshot(
             )
 
             url = f"http://127.0.0.1:{port}{page_path}"
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
+
+            # Let GSAP animations and initial rendering settle
+            await asyncio.sleep(1.5)
 
             # Lock to phase if requested
             if phase:
@@ -333,7 +336,11 @@ async def capture_screenshot_live(
             page = await browser.new_page(
                 viewport={"width": vp["width"], "height": vp["height"]},
             )
-            await page.goto(url, wait_until="networkidle", timeout=15000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+            # Let GSAP animations and initial rendering settle
+            await asyncio.sleep(1.5)
+
             await page.screenshot(path=str(output_path), full_page=False)
         finally:
             await browser.close()

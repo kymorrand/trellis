@@ -149,6 +149,22 @@ class TestCaptureScreenshot:
         assert result.suffix == ".png"
 
     @pytest.mark.asyncio
+    async def test_capture_uses_domcontentloaded(self, config):
+        """goto must use domcontentloaded, not networkidle (SSE keeps conn open)."""
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with (
+            patch("trellis.hands.screenshot.async_playwright", return_value=mock_pw_cm),
+            patch("trellis.hands.screenshot._start_temp_server", new_callable=AsyncMock) as mock_start,
+            patch("trellis.hands.screenshot._stop_temp_server", new_callable=AsyncMock),
+        ):
+            mock_start.return_value = MagicMock()
+            await capture_screenshot(config, page_path="/", phase="day")
+
+        call_kwargs = mock_page.goto.call_args[1]
+        assert call_kwargs["wait_until"] == "domcontentloaded"
+
+    @pytest.mark.asyncio
     async def test_capture_phase_lock(self, config):
         mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
 
@@ -657,6 +673,20 @@ class TestCaptureScreenshotLive:
 
         call_args = mock_page.goto.call_args
         assert "/canvas" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_live_uses_domcontentloaded(self, tmp_vault):
+        """goto must use domcontentloaded, not networkidle (SSE keeps conn open)."""
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with patch(
+            "trellis.hands.screenshot.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            await capture_screenshot_live(vault_path=tmp_vault)
+
+        call_kwargs = mock_page.goto.call_args[1]
+        assert call_kwargs["wait_until"] == "domcontentloaded"
 
     @pytest.mark.asyncio
     async def test_does_not_start_temp_server(self, tmp_vault):
