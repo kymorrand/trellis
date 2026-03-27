@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-03-27 — `!screenshotnow` Discord Command
+
+On-demand live screenshot capture from the running Trellis web server, posted directly to a designated Discord channel.
+
+### `capture_screenshot_live()` (`trellis/hands/screenshot.py`)
+
+- **New function** — Captures a screenshot from the already-running Trellis web server (port 8420) via async Playwright. Unlike `capture_screenshot()`, this does NOT spin up a temporary server. Saves to `_ivy/screenshots/live-{timestamp}.png`. 15-second page load timeout with networkidle wait.
+
+### `post_file_to_channel_id()` (`trellis/senses/discord_channel.py`)
+
+- **New method** on `IvyDiscordBot` — Posts a file to a Discord channel by numeric ID. Uses `get_channel()` with `fetch_channel()` fallback. Handles NotFound and Forbidden gracefully.
+
+### `!screenshotnow` Command (`trellis/senses/discord_channel.py`)
+
+- **New Discord command** — Captures a live screenshot and posts it to channel `1487076264450981999` with timestamp and hostname metadata. Sends a confirmation to the source channel if different from the target. Error handling for server unreachable and Playwright failures.
+
+### Testing (`tests/test_screenshot_hand.py`)
+
+- 11 new tests: `capture_screenshot_live` (path format, port, viewport, page path, no temp server), `post_file_to_channel_id` (cached channel, fetch fallback, not-found handling), `!screenshotnow` command (capture + post flow, confirmation message, error handling).
+
+---
+
 ## 2026-03-27 — Fix screenshot-to-Discord pipeline wiring
 
 Three bugs prevented the screenshot validation pipeline from working end-to-end despite all individual components functioning correctly.

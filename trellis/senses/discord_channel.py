@@ -20,6 +20,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 import anthropic
@@ -222,6 +223,25 @@ class IvyDiscordBot(discord.Client):
                 return
         logger.warning(f"Channel #{channel_name} not found or not writable")
 
+    async def post_file_to_channel_id(
+        self, channel_id: int, file_path: Path, message: str = ""
+    ) -> None:
+        """Post a file to a Discord channel by its numeric ID."""
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.fetch_channel(channel_id)
+            except discord.NotFound:
+                logger.warning(f"Channel {channel_id} not found — cannot post file")
+                return
+            except discord.Forbidden:
+                logger.warning(f"No permission to access channel {channel_id}")
+                return
+        await channel.send(
+            content=message or None,
+            file=discord.File(str(file_path)),
+        )
+
     async def on_ready(self):
         logger.info(f"Ivy connected as {self.user} (id: {self.user.id})")
 
@@ -423,6 +443,52 @@ class IvyDiscordBot(discord.Client):
             for chunk in _split_message(f"{result.response}\n\n-# {result.indicator}"):
                 await message.channel.send(chunk)
             log_entry(self.vault_path, "COMMAND", "Catch-up briefing requested")
+            if self.agent_state:
+                self.agent_state.set("idle")
+            return
+
+        # !screenshotnow command — capture live server and post to channel
+        if content.lower().strip() == "!screenshotnow":
+            import socket
+
+            from trellis.hands.screenshot import capture_screenshot_live
+
+            if self.agent_state:
+                self.agent_state.set("acting", "capturing live screenshot")
+            async with message.channel.typing():
+                try:
+                    screenshot_path = await capture_screenshot_live(
+                        vault_path=self.vault_path,
+                    )
+
+                    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    hostname = socket.gethostname()
+                    caption = (
+                        f"**Live Screenshot**\n"
+                        f"Captured: {timestamp_str}\n"
+                        f"Host: {hostname}"
+                    )
+
+                    # Post to the designated channel
+                    target_channel_id = 1487076264450981999
+                    await self.post_file_to_channel_id(
+                        target_channel_id, screenshot_path, caption
+                    )
+
+                    # Confirm back to the channel where the command was issued
+                    if message.channel.id != target_channel_id:
+                        await message.channel.send(
+                            f"Screenshot posted to <#{target_channel_id}>."
+                        )
+                    else:
+                        # Already posted the file to this channel via post_file_to_channel_id
+                        pass
+                except Exception as e:
+                    logger.error("!screenshotnow failed: %s", e, exc_info=True)
+                    await message.channel.send(
+                        f"Live screenshot failed: {type(e).__name__}: {e}"
+                    )
+            log_entry(self.vault_path, "COMMAND", "Live screenshot captured and posted")
             if self.agent_state:
                 self.agent_state.set("idle")
             return

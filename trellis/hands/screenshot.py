@@ -289,6 +289,59 @@ async def validate_screenshot(
     )
 
 
+async def capture_screenshot_live(
+    vault_path: Path,
+    page_path: str = "/",
+    viewport: str = "kiosk",
+    server_port: int = 8420,
+) -> Path:
+    """Capture screenshot from the live running Trellis web server.
+
+    Unlike capture_screenshot(), this does NOT start a temp server.
+    It connects to the already-running server at the given port.
+    Used for on-demand kiosk validation via !screenshotnow.
+
+    Args:
+        vault_path: Path to the vault root.
+        page_path: URL path to capture (e.g. "/", "/canvas").
+        viewport: Viewport preset name (kiosk/phone/tablet).
+        server_port: Port of the live server to connect to.
+
+    Returns:
+        Path to the saved screenshot PNG.
+
+    Raises:
+        ConnectionError: If the live server is unreachable.
+        RuntimeError: If Playwright fails to capture.
+    """
+    vp = VIEWPORTS.get(viewport, VIEWPORTS["kiosk"])
+
+    # Ensure screenshots directory exists
+    screenshots_dir = vault_path / "_ivy" / "screenshots"
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"live-{timestamp}.png"
+    output_path = screenshots_dir / filename
+
+    url = f"http://127.0.0.1:{server_port}{page_path}"
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        try:
+            page = await browser.new_page(
+                viewport={"width": vp["width"], "height": vp["height"]},
+            )
+            await page.goto(url, wait_until="networkidle", timeout=15000)
+            await page.screenshot(path=str(output_path), full_page=False)
+        finally:
+            await browser.close()
+
+    logger.info("Live screenshot captured: %s", output_path)
+    return output_path
+
+
 async def capture_and_validate(
     config: dict,
     phase: str,

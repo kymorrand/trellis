@@ -9,6 +9,9 @@ Tests cover:
     - Discord post_file / post_file_to_channel methods
     - !screenshot command handler
     - Heartbeat screenshot validation scheduling
+    - capture_screenshot_live (connects to live server, no temp server)
+    - post_file_to_channel_id (post by numeric channel ID)
+    - !screenshotnow command handler
 """
 
 import json
@@ -24,6 +27,7 @@ from trellis.hands.screenshot import (
     _sync_vision_call,
     capture_and_validate,
     capture_screenshot,
+    capture_screenshot_live,
     capture_start_screen,
     validate_screenshot,
 )
@@ -590,3 +594,303 @@ class TestViewports:
 
     def test_phone_dimensions(self):
         assert VIEWPORTS["phone"] == {"width": 390, "height": 844}
+
+
+# ---------------------------------------------------------------------------
+# 9. capture_screenshot_live (mocked Playwright, no temp server)
+# ---------------------------------------------------------------------------
+
+class TestCaptureScreenshotLive:
+    @pytest.mark.asyncio
+    async def test_returns_path_with_live_prefix(self, tmp_vault):
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with patch(
+            "trellis.hands.screenshot.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            result = await capture_screenshot_live(vault_path=tmp_vault)
+
+        assert isinstance(result, Path)
+        assert result.name.startswith("live-")
+        assert result.suffix == ".png"
+
+    @pytest.mark.asyncio
+    async def test_connects_to_live_server_port(self, tmp_vault):
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with patch(
+            "trellis.hands.screenshot.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            await capture_screenshot_live(vault_path=tmp_vault, server_port=9999)
+
+        mock_page.goto.assert_called_once()
+        call_args = mock_page.goto.call_args
+        assert "9999" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_uses_kiosk_viewport_by_default(self, tmp_vault):
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with patch(
+            "trellis.hands.screenshot.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            await capture_screenshot_live(vault_path=tmp_vault)
+
+        call_kwargs = mock_browser.new_page.call_args[1]
+        assert call_kwargs["viewport"]["width"] == 1920
+        assert call_kwargs["viewport"]["height"] == 1080
+
+    @pytest.mark.asyncio
+    async def test_custom_page_path(self, tmp_vault):
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with patch(
+            "trellis.hands.screenshot.async_playwright",
+            return_value=mock_pw_cm,
+        ):
+            await capture_screenshot_live(
+                vault_path=tmp_vault, page_path="/canvas"
+            )
+
+        call_args = mock_page.goto.call_args
+        assert "/canvas" in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_does_not_start_temp_server(self, tmp_vault):
+        """capture_screenshot_live must NOT spin up a temp server."""
+        mock_pw_cm, mock_page, mock_browser = _mock_playwright_context()
+
+        with (
+            patch(
+                "trellis.hands.screenshot.async_playwright",
+                return_value=mock_pw_cm,
+            ),
+            patch(
+                "trellis.hands.screenshot._start_temp_server",
+                new_callable=AsyncMock,
+            ) as mock_start,
+        ):
+            await capture_screenshot_live(vault_path=tmp_vault)
+
+        mock_start.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 10. post_file_to_channel_id (mocked Discord)
+# ---------------------------------------------------------------------------
+
+class TestPostFileToChannelId:
+    @pytest.mark.asyncio
+    async def test_post_file_to_known_channel(self, fake_png):
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        mock_channel = AsyncMock()
+        bot.get_channel = MagicMock(return_value=mock_channel)
+
+        await bot.post_file_to_channel_id(12345, fake_png, "hello")
+        mock_channel.send.assert_called_once()
+        call_kwargs = mock_channel.send.call_args[1]
+        assert call_kwargs["content"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_post_file_fetches_when_not_cached(self, fake_png):
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        mock_channel = AsyncMock()
+        bot.get_channel = MagicMock(return_value=None)
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
+
+        await bot.post_file_to_channel_id(12345, fake_png, "test")
+        bot.fetch_channel.assert_called_once_with(12345)
+        mock_channel.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_post_file_handles_not_found(self, fake_png):
+        import discord as discord_mod
+
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        bot.get_channel = MagicMock(return_value=None)
+        mock_response = MagicMock()
+        mock_response.status = 404
+        bot.fetch_channel = AsyncMock(
+            side_effect=discord_mod.NotFound(mock_response, "not found")
+        )
+
+        # Should not raise
+        await bot.post_file_to_channel_id(99999, fake_png)
+
+
+# ---------------------------------------------------------------------------
+# 11. !screenshotnow command handler
+# ---------------------------------------------------------------------------
+
+class TestScreenshotNowCommand:
+    @pytest.mark.asyncio
+    async def test_screenshotnow_calls_capture_live(self):
+        """Verify !screenshotnow triggers capture_screenshot_live."""
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        fake_path = Path("/tmp/fake-live.png")
+
+        mock_user = MagicMock()
+        mock_user.id = 1
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        bot.allowed_user_id = 999
+        bot.guild_id = 123
+        bot.vault_path = Path("/tmp/vault")
+        bot.agent_state = None
+        bot.anthropic_client = MagicMock()
+        bot.conversations = {}
+        bot.heartbeat = None
+        bot.brain = MagicMock()
+        bot._connection = MagicMock()
+        bot._connection.user = mock_user
+
+        mock_msg = AsyncMock()
+        mock_msg.author.id = 999
+        mock_msg.guild.id = 123
+        mock_msg.content = "!screenshotnow"
+        mock_msg.channel = AsyncMock()
+        mock_msg.channel.id = 555
+        mock_msg.channel.name = "general"
+        mock_msg.channel.typing = MagicMock(return_value=AsyncMock())
+
+        with (
+            patch("trellis.senses.discord_channel.log_entry"),
+            patch(
+                "trellis.hands.screenshot.capture_screenshot_live",
+                new_callable=AsyncMock,
+                return_value=fake_path,
+            ) as mock_capture,
+            patch.object(
+                bot,
+                "post_file_to_channel_id",
+                new_callable=AsyncMock,
+            ) as mock_post,
+        ):
+            await bot.on_message(mock_msg)
+
+        mock_capture.assert_called_once_with(vault_path=Path("/tmp/vault"))
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args[0][0] == 1487076264450981999
+        assert call_args[0][1] == fake_path
+
+    @pytest.mark.asyncio
+    async def test_screenshotnow_posts_confirmation_to_source_channel(self):
+        """If command channel != target channel, a confirmation is sent."""
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        fake_path = Path("/tmp/fake-live.png")
+
+        mock_user = MagicMock()
+        mock_user.id = 1
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        bot.allowed_user_id = 999
+        bot.guild_id = 123
+        bot.vault_path = Path("/tmp/vault")
+        bot.agent_state = None
+        bot.anthropic_client = MagicMock()
+        bot.conversations = {}
+        bot.heartbeat = None
+        bot.brain = MagicMock()
+        bot._connection = MagicMock()
+        bot._connection.user = mock_user
+
+        mock_msg = AsyncMock()
+        mock_msg.author.id = 999
+        mock_msg.guild.id = 123
+        mock_msg.content = "!screenshotnow"
+        mock_msg.channel = AsyncMock()
+        mock_msg.channel.id = 555  # Different from target
+        mock_msg.channel.name = "general"
+        mock_msg.channel.typing = MagicMock(return_value=AsyncMock())
+
+        with (
+            patch("trellis.senses.discord_channel.log_entry"),
+            patch(
+                "trellis.hands.screenshot.capture_screenshot_live",
+                new_callable=AsyncMock,
+                return_value=fake_path,
+            ),
+            patch.object(
+                bot,
+                "post_file_to_channel_id",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await bot.on_message(mock_msg)
+
+        # Confirmation should have been sent to the source channel
+        send_calls = mock_msg.channel.send.call_args_list
+        confirmation_found = any(
+            "Screenshot posted to" in str(call) for call in send_calls
+        )
+        assert confirmation_found
+
+    @pytest.mark.asyncio
+    async def test_screenshotnow_handles_error_gracefully(self):
+        """Errors should be reported to the user, not crash."""
+        from trellis.senses.discord_channel import IvyDiscordBot
+
+        mock_user = MagicMock()
+        mock_user.id = 1
+
+        with patch.object(IvyDiscordBot, "__init__", lambda self, **kw: None):
+            bot = IvyDiscordBot.__new__(IvyDiscordBot)
+
+        bot.allowed_user_id = 999
+        bot.guild_id = 123
+        bot.vault_path = Path("/tmp/vault")
+        bot.agent_state = None
+        bot.anthropic_client = MagicMock()
+        bot.conversations = {}
+        bot.heartbeat = None
+        bot.brain = MagicMock()
+        bot._connection = MagicMock()
+        bot._connection.user = mock_user
+
+        mock_msg = AsyncMock()
+        mock_msg.author.id = 999
+        mock_msg.guild.id = 123
+        mock_msg.content = "!screenshotnow"
+        mock_msg.channel = AsyncMock()
+        mock_msg.channel.id = 555
+        mock_msg.channel.name = "general"
+        mock_msg.channel.typing = MagicMock(return_value=AsyncMock())
+
+        with (
+            patch("trellis.senses.discord_channel.log_entry"),
+            patch(
+                "trellis.hands.screenshot.capture_screenshot_live",
+                new_callable=AsyncMock,
+                side_effect=ConnectionError("Server unreachable"),
+            ),
+        ):
+            await bot.on_message(mock_msg)
+
+        # Error message should have been sent
+        send_calls = mock_msg.channel.send.call_args_list
+        error_found = any(
+            "Live screenshot failed" in str(call) for call in send_calls
+        )
+        assert error_found
