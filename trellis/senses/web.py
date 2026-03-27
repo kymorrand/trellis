@@ -35,6 +35,7 @@ API:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -45,8 +46,6 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-import base64
-
 from pydantic import BaseModel
 
 from trellis.hands.display_capture import capture_display, list_monitors

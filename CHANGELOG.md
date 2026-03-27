@@ -1,8 +1,8 @@
 # Changelog
 
-## 2026-03-27 — Display Capture System (Physical Monitor)
+## 2026-03-27 — Dual-Capture Screenshot System (Sprint 7)
 
-New display capture system using `mss` that grabs the actual physical screen (what Kyle sees on Greenhouse's monitor), exposed via a FastAPI endpoint. Complements the existing Playwright screenshot system which captures headless DOM "code reality."
+Display capture system using `mss` for physical monitor screenshots + dev-mode debug panel for triggering captures from the browser.
 
 ### Display Capture Module (`trellis/hands/display_capture.py`)
 
@@ -17,13 +17,19 @@ New display capture system using `mss` that grabs the actual physical screen (wh
 - Runs synchronous mss capture in an executor to avoid blocking the async event loop.
 - Returns 500 with error message on capture failure.
 
+### Debug Capture Panel (Dev Mode)
+
+- **`trellis/static/js/debug-capture.js`** — Self-initializing IIFE module. Creates a floating bottom-right panel with a "Capture for Ivy" button that POSTs to `/api/screenshot`. Shows capture metadata on success. Keyboard shortcut Ctrl+Shift+S (Cmd+Shift+S on Mac). Only activates on localhost or with `?debug` param.
+- **`trellis/static/debug-panel.css`** — Warm cream panel styling using oklch colors. Muted green capture button, smooth transitions, success/error states.
+- All 5 HTML pages (`start`, `canvas`, `brief`, `inbox`, `garden`) include the debug panel.
+
 ### Dependencies
 
 - `mss>=9.0.0` added to `[project.optional-dependencies] dev`
 
 ### Testing (`tests/test_display_capture.py`)
 
-- 15 tests covering: list_monitors (count, fields, primary index), capture_display (return type, dimensions, PNG format, monitor info, timestamp, default monitor, invalid index, failure handling), cleanup (over/under limit), save_temp_screenshot (file creation, cleanup trigger), and API endpoint (response structure, error handling).
+- 17 tests covering: list_monitors, capture_display, cleanup, save_temp_screenshot, and API endpoint.
 
 ---
 
