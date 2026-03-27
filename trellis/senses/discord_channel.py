@@ -193,6 +193,35 @@ class IvyDiscordBot(discord.Client):
                 return
         logger.warning(f"Channel #{channel_name} not found or not writable")
 
+    async def post_file(self, file_path: Path, message: str = ""):
+        """Post a file (image) to the primary channel with optional text."""
+        if not self._primary_channel:
+            logger.warning("No primary channel — cannot post file")
+            return
+        await self._primary_channel.send(
+            content=message or None,
+            file=discord.File(str(file_path)),
+        )
+
+    async def post_file_to_channel(
+        self, channel_name: str, file_path: Path, message: str = ""
+    ):
+        """Post a file (image) to a named channel with optional text."""
+        guild = self.get_guild(self.guild_id)
+        if not guild:
+            logger.warning(
+                f"Guild {self.guild_id} not found — cannot post file to #{channel_name}"
+            )
+            return
+        for channel in guild.text_channels:
+            if channel.name == channel_name and channel.permissions_for(guild.me).send_messages:
+                await channel.send(
+                    content=message or None,
+                    file=discord.File(str(file_path)),
+                )
+                return
+        logger.warning(f"Channel #{channel_name} not found or not writable")
+
     async def on_ready(self):
         logger.info(f"Ivy connected as {self.user} (id: {self.user.id})")
 
@@ -394,6 +423,53 @@ class IvyDiscordBot(discord.Client):
             for chunk in _split_message(f"{result.response}\n\n-# {result.indicator}"):
                 await message.channel.send(chunk)
             log_entry(self.vault_path, "COMMAND", "Catch-up briefing requested")
+            if self.agent_state:
+                self.agent_state.set("idle")
+            return
+
+        # !screenshot command — capture and validate the Start screen
+        if content.lower().startswith("!screenshot"):
+            parts = content.split(maxsplit=1)
+            phase = parts[1].strip() if len(parts) > 1 else "day"
+            if self.agent_state:
+                self.agent_state.set("acting", "capturing screenshot")
+            async with message.channel.typing():
+                try:
+                    from trellis.core.config import load_config
+                    from trellis.hands.screenshot import capture_and_validate
+
+                    config = load_config()
+                    expectations = (
+                        f"Start screen showing {phase} phase with appropriate gradient, "
+                        "2x2 navigation grid visible, greeting text readable, "
+                        "no layout overflow or clipping"
+                    )
+                    screenshot_path, result = await capture_and_validate(
+                        config=config,
+                        phase=phase,
+                        expectations=expectations,
+                        anthropic_client=self.anthropic_client,
+                    )
+
+                    if result.passed:
+                        caption = (
+                            f"\U0001f4f8 **Screenshot: {phase}-kiosk**\n"
+                            f"\u2705 Validation passed: {result.summary}"
+                        )
+                    else:
+                        caption = (
+                            f"\U0001f4f8 **Screenshot: {phase}-kiosk**\n"
+                            f"\u274c Validation failed: {result.summary}"
+                        )
+
+                    await message.channel.send(
+                        content=caption,
+                        file=discord.File(str(screenshot_path)),
+                    )
+                except Exception as e:
+                    logger.error("Screenshot command failed: %s", e, exc_info=True)
+                    await message.channel.send(f"Screenshot failed: {type(e).__name__}: {e}")
+            log_entry(self.vault_path, "COMMAND", f"Screenshot captured: {phase}")
             if self.agent_state:
                 self.agent_state.set("idle")
             return

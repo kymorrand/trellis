@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-27 — Sprint 6: Discord Screenshot Posting & Vision Validation
+
+Ivy gains screenshot capture, vision-based validation, and Discord file posting -- a full pipeline from UI capture to AI assessment to team communication.
+
+### Screenshot Hand (`trellis/hands/screenshot.py`)
+
+- **`capture_screenshot()`** — Async function that spins up a temporary Uvicorn server, uses async Playwright to navigate and capture, supports phase locking via circadian JS, and saves timestamped PNGs to `{vault_path}/_ivy/screenshots/`.
+- **`capture_start_screen()`** — Convenience wrapper for capturing the Start screen at a specific circadian phase and viewport.
+- **`validate_screenshot()`** — Sends a screenshot to Claude vision (claude-sonnet-4-20250514) with natural-language expectations, parses structured pass/fail response, tracks API cost.
+- **`capture_and_validate()`** — Combined convenience function: capture then validate in one call.
+- **`ValidationResult`** dataclass — `passed`, `summary`, `details`, `cost_usd`.
+
+### Discord File Posting (`trellis/senses/discord_channel.py`)
+
+- **`post_file()`** — Posts a file (image) to the primary channel with optional text message.
+- **`post_file_to_channel()`** — Posts a file to a named channel by name.
+- **`!screenshot [phase]`** command — Kyle types `!screenshot evening`, Ivy captures the Start screen at that phase, validates with vision, and posts the screenshot + validation summary to the channel. Shows typing indicator during capture.
+
+### Heartbeat Integration (`trellis/core/heartbeat.py`)
+
+- **`_screenshot_validation()`** task — Runs daily at 8:30 AM (after morning brief). Captures Start screen in "day" phase, validates layout/content, posts results to Discord. On failure, posts the screenshot image with details.
+- **`discord_post_file_callback`** — New constructor parameter for file posting from heartbeat tasks.
+- **`anthropic_client` / `config`** — New constructor parameters enabling vision API access from scheduled tasks.
+
+### Testing (`tests/test_screenshot_hand.py`)
+
+- 22 tests covering: ValidationResult dataclass, capture with mocked Playwright (path return, phase lock, no-phase skip, custom viewport), vision validation (JSON parsing, code fence handling, invalid JSON fallback, async wrapper), capture_and_validate integration, Discord file posting (primary channel, missing channel, named channel), !screenshot command handler, heartbeat scheduling (trigger at 8:30, skip without client, callback storage), viewport config.
+
+---
+
 ## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
 
 Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
