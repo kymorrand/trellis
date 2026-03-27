@@ -273,6 +273,76 @@
     body.kiosk .start-footer {
       padding: var(--space-3) 0 var(--space-2);
     }
+
+    /* ---- Dev controls overlay ---- */
+    .dev-panel {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 9999;
+      background: oklch(15% 0.01 50 / 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid oklch(40% 0.01 50 / 0.3);
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      max-width: 320px;
+      font-family: var(--font-code);
+      font-size: 11px;
+      color: oklch(80% 0.01 80);
+      display: none;
+    }
+    .dev-panel[data-visible="true"] {
+      display: block;
+    }
+    .dev-panel[data-collapsed="true"] .dev-panel__buttons {
+      display: none;
+    }
+    .dev-panel__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      user-select: none;
+      cursor: pointer;
+    }
+    .dev-panel__title {
+      font-weight: 700;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: oklch(60% 0.01 80);
+    }
+    .dev-panel__toggle {
+      font-size: 10px;
+      color: oklch(50% 0.01 80);
+    }
+    .dev-panel__buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .dev-panel__btn {
+      appearance: none;
+      border: 1px solid oklch(40% 0.01 50 / 0.4);
+      background: oklch(20% 0.01 50 / 0.6);
+      color: oklch(80% 0.01 80);
+      font-family: var(--font-code);
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease;
+      line-height: 1.4;
+    }
+    .dev-panel__btn:hover {
+      background: oklch(30% 0.01 50 / 0.7);
+      border-color: oklch(50% 0.01 50 / 0.5);
+    }
+    .dev-panel__btn--active {
+      background: oklch(45% 0.08 145 / 0.7);
+      border-color: oklch(55% 0.10 145 / 0.6);
+      color: oklch(95% 0.01 80);
+    }
   </style>
 </head>
 <body>
@@ -374,6 +444,21 @@
         <span class="start-footer__ivy">Ivy</span> on Trellis
       </span>
     </footer>
+
+    <div class="dev-panel" id="dev-panel">
+      <div class="dev-panel__header" id="dev-panel-header">
+        <span class="dev-panel__title">Circadian Dev</span>
+        <span class="dev-panel__toggle" id="dev-panel-toggle">collapse</span>
+      </div>
+      <div class="dev-panel__buttons">
+        <button class="dev-panel__btn" data-phase="dawn">Dawn</button>
+        <button class="dev-panel__btn" data-phase="day">Day</button>
+        <button class="dev-panel__btn" data-phase="afternoon">Afternoon</button>
+        <button class="dev-panel__btn" data-phase="evening">Evening</button>
+        <button class="dev-panel__btn" data-phase="night">Night</button>
+        <button class="dev-panel__btn" data-phase="auto">Auto</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -539,6 +624,63 @@
     }
 
     init();
+
+    // =============================================
+    // Dev Controls — Phase Lock Panel
+    // =============================================
+    (function initDevPanel() {
+      const params = new URLSearchParams(window.location.search);
+      const devMode = params.has('dev') && params.get('dev') !== 'false';
+      if (!devMode) return;
+
+      const panel = document.getElementById('dev-panel');
+      const header = document.getElementById('dev-panel-header');
+      const toggleLabel = document.getElementById('dev-panel-toggle');
+      const buttons = panel.querySelectorAll('.dev-panel__btn');
+
+      // Show the panel
+      panel.dataset.visible = 'true';
+
+      // Restore collapsed state from sessionStorage
+      const collapsed = sessionStorage.getItem('dev-panel-collapsed') === 'true';
+      if (collapsed) {
+        panel.dataset.collapsed = 'true';
+        toggleLabel.textContent = 'expand';
+      }
+
+      // Toggle collapse on header click
+      header.addEventListener('click', () => {
+        const isCollapsed = panel.dataset.collapsed === 'true';
+        panel.dataset.collapsed = isCollapsed ? 'false' : 'true';
+        toggleLabel.textContent = isCollapsed ? 'collapse' : 'expand';
+        sessionStorage.setItem('dev-panel-collapsed', !isCollapsed);
+      });
+
+      // Phase button clicks
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const phase = btn.dataset.phase;
+
+          // Clear all active states
+          buttons.forEach(b => b.classList.remove('dev-panel__btn--active'));
+
+          if (phase === 'auto') {
+            TrellisCircadian.init();
+          } else {
+            TrellisCircadian.lockToPhase(phase);
+            btn.classList.add('dev-panel__btn--active');
+          }
+        });
+      });
+
+      // Shift+D toggles panel visibility
+      document.addEventListener('keydown', (e) => {
+        if (e.shiftKey && e.key === 'D') {
+          const isVisible = panel.dataset.visible === 'true';
+          panel.dataset.visible = isVisible ? 'false' : 'true';
+        }
+      });
+    })();
   </script>
 </body>
 </html>

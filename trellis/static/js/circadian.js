@@ -166,6 +166,15 @@ const PHASES = {
   },
 };
 
+// Background gradient values per phase (module-scope for lockToPhase access)
+const BG_VALUES = {
+  night:     ['oklch(18% 0.015 50)', 'oklch(15% 0.012 45)'],
+  dawn:      ['oklch(85% 0.02 75)', 'oklch(80% 0.018 70)'],
+  day:       ['oklch(93% 0.02 80)', 'oklch(90% 0.018 75)'],
+  afternoon: ['oklch(88% 0.022 70)', 'oklch(84% 0.02 65)'],
+  evening:   ['oklch(25% 0.02 52)', 'oklch(20% 0.015 48)'],
+};
+
 // Typography axis values per phase
 const TYPO_PHASES = {
   dawn:      { softness: 30, weight: 800, casual: 0.3 },
@@ -226,28 +235,19 @@ function generateTypoKeyframes(phasePcts) {
 
 // Background gradient also shifts with phase
 function generateBgKeyframes(phasePcts) {
-  // The canvas background gradient shifts warmth across the day
-  const bgValues = {
-    night:     ['oklch(18% 0.015 50)', 'oklch(15% 0.012 45)'],
-    dawn:      ['oklch(85% 0.02 75)', 'oklch(80% 0.018 70)'],
-    day:       ['oklch(93% 0.02 80)', 'oklch(90% 0.018 75)'],
-    afternoon: ['oklch(88% 0.022 70)', 'oklch(84% 0.02 65)'],
-    evening:   ['oklch(25% 0.02 52)', 'oklch(20% 0.015 48)'],
-  };
-
   let css = `@keyframes circadian-bg-top {\n`;
   for (const [phase, pct] of [['night', 0], ['dawn', phasePcts.dawn], ['day', phasePcts.day],
     ['afternoon', phasePcts.afternoon], ['evening', phasePcts.evening], ['night', phasePcts.night]]) {
-    css += `  ${pct.toFixed(2)}% { --bg-top: ${bgValues[phase][0]}; }\n`;
+    css += `  ${pct.toFixed(2)}% { --bg-top: ${BG_VALUES[phase][0]}; }\n`;
   }
-  css += `  100% { --bg-top: ${bgValues.night[0]}; }\n}\n`;
+  css += `  100% { --bg-top: ${BG_VALUES.night[0]}; }\n}\n`;
 
   css += `@keyframes circadian-bg-bottom {\n`;
   for (const [phase, pct] of [['night', 0], ['dawn', phasePcts.dawn], ['day', phasePcts.day],
     ['afternoon', phasePcts.afternoon], ['evening', phasePcts.evening], ['night', phasePcts.night]]) {
-    css += `  ${pct.toFixed(2)}% { --bg-bottom: ${bgValues[phase][1]}; }\n`;
+    css += `  ${pct.toFixed(2)}% { --bg-bottom: ${BG_VALUES[phase][1]}; }\n`;
   }
-  css += `  100% { --bg-bottom: ${bgValues.night[1]}; }\n}\n`;
+  css += `  100% { --bg-bottom: ${BG_VALUES.night[1]}; }\n}\n`;
 
   return css;
 }
@@ -300,7 +300,8 @@ function lockToPhase(phaseName) {
   document.getElementById('circadian-keyframes')?.remove();
   const phase = PHASES[phaseName];
   const typo = TYPO_PHASES[phaseName];
-  if (!phase || !typo) return;
+  const bg = BG_VALUES[phaseName];
+  if (!phase || !typo || !bg) return;
 
   const style = document.createElement('style');
   style.id = 'circadian-keyframes';
@@ -311,6 +312,8 @@ function lockToPhase(phaseName) {
   css += `  --fraunces-softness: ${typo.softness};\n`;
   css += `  --fraunces-weight: ${typo.weight};\n`;
   css += `  --recursive-casual: ${typo.casual};\n`;
+  css += `  --bg-top: ${bg[0]};\n`;
+  css += `  --bg-bottom: ${bg[1]};\n`;
   css += '}\n';
   style.textContent = css;
   document.head.appendChild(style);
