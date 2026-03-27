@@ -35,7 +35,6 @@ API:
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import re
@@ -45,10 +44,11 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from trellis.hands.display_capture import capture_display, list_monitors
+from trellis.hands.display_capture import capture_display
 
 if TYPE_CHECKING:
     from trellis.core.agent_state import AgentState
@@ -734,7 +734,7 @@ def create_app(
 
     @app.post("/api/screenshot")
     async def api_screenshot(body: ScreenshotRequest | None = None):
-        """Capture the physical display using mss."""
+        """Capture the physical display and return raw PNG bytes."""
         monitor_idx = body.monitor if body else None
 
         try:
@@ -742,24 +742,20 @@ def create_app(
             result = await loop.run_in_executor(
                 None, lambda: capture_display(monitor_idx)
             )
-            monitors = await loop.run_in_executor(None, list_monitors)
         except Exception as e:
+            logger.error("Screenshot capture failed: %s", e)
             return JSONResponse(status_code=500, content={"error": str(e)})
 
-        image_b64 = base64.b64encode(result.image_bytes).decode("ascii")
-
-        return {
-            "image": image_b64,
-            "metadata": {
-                "timestamp": result.timestamp,
-                "display": {
-                    "width": result.width,
-                    "height": result.height,
-                    "monitor": result.monitor_info.get("index", 1),
-                },
-                "monitors_available": len(monitors),
+        return Response(
+            content=result.image_bytes,
+            media_type="image/png",
+            headers={
+                "X-Screenshot-Timestamp": result.timestamp,
+                "X-Screenshot-Width": str(result.width),
+                "X-Screenshot-Height": str(result.height),
+                "X-Screenshot-Monitor": str(result.monitor_info.get("index", 1)),
             },
-        }
+        )
 
     return app
 

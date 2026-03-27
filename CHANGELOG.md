@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-03-27 — Fix /api/screenshot to Return Raw PNG
+
+### Fixed
+- `/api/screenshot` endpoint now returns raw PNG binary with `Content-Type: image/png` instead of JSON-wrapped base64. Metadata (timestamp, dimensions, monitor index) moved to response headers (`X-Screenshot-*`).
+- Added `DISPLAY=:1` and `XAUTHORITY=/run/user/1000/gdm/Xauthority` to `scripts/trellis.service` so `mss` can access the physical display from systemd.
+- `capture_display()` now logs `DISPLAY` and `XAUTHORITY` env var values on failure for easier debugging of display access issues.
+
+---
+
 ## 2026-03-27 — Dual-Capture Screenshot System (Sprint 7)
 
 Display capture system using `mss` for physical monitor screenshots + dev-mode debug panel for triggering captures from the browser.

@@ -11,6 +11,8 @@ Group=kyle
 WorkingDirectory=/home/kyle/projects/trellis
 EnvironmentFile=/home/kyle/projects/trellis/.env
 Environment=PATH=/home/kyle/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DISPLAY=:1
+Environment=XAUTHORITY=/run/user/1000/gdm/Xauthority
 ExecStart=/home/kyle/projects/trellis/.venv/bin/python scripts/run_discord.py
 Restart=on-failure
 RestartSec=10

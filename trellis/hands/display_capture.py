@@ -11,7 +11,9 @@ Used by:
 
 from __future__ import annotations
 
+import io
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,8 +85,6 @@ def capture_display(monitor: int | None = None) -> DisplayCapture:
             img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
             # Convert to PNG bytes
-            import io
-
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             png_bytes = buf.getvalue()
@@ -107,6 +107,14 @@ def capture_display(monitor: int | None = None) -> DisplayCapture:
     except ValueError:
         raise
     except Exception as e:
+        display = os.environ.get("DISPLAY", "<not set>")
+        xauth = os.environ.get("XAUTHORITY", "<not set>")
+        logger.error(
+            "Display capture failed: %s (DISPLAY=%s, XAUTHORITY=%s)",
+            e,
+            display,
+            xauth,
+        )
         raise RuntimeError(f"Display capture failed: {e}") from e
 
 

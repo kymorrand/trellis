@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -139,6 +140,17 @@ class TestCaptureDisplay:
         with pytest.raises(RuntimeError, match="Display capture failed"):
             capture_display()
 
+    @patch("trellis.hands.display_capture.mss.mss", side_effect=Exception("$DISPLAY not set"))
+    def test_capture_failure_logs_env_vars(self, mock_mss, caplog):
+        from trellis.hands.display_capture import capture_display
+
+        with caplog.at_level(logging.ERROR, logger="trellis.hands.display_capture"):
+            with pytest.raises(RuntimeError):
+                capture_display()
+
+        assert "DISPLAY=" in caplog.text
+        assert "XAUTHORITY=" in caplog.text
+
 
 class TestCleanupTempScreenshots:
     """Tests for cleanup_temp_screenshots()."""
@@ -214,7 +226,30 @@ class TestScreenshotEndpoint:
         )
 
     @patch("trellis.senses.web.capture_display")
-    def test_endpoint_returns_correct_structure(self, mock_capture):
+    def test_endpoint_returns_raw_png(self, mock_capture):
+        from starlette.testclient import TestClient
+
+        from trellis.hands.display_capture import DisplayCapture
+
+        png_data = b"\x89PNG\r\n\x1a\nfakedata"
+        mock_capture.return_value = DisplayCapture(
+            image_bytes=png_data,
+            width=1920,
+            height=1080,
+            monitor_info={"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080},
+            timestamp="2026-03-27T12:00:00Z",
+        )
+
+        app = self._make_app()
+        client = TestClient(app)
+        resp = client.post("/api/screenshot", json={})
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content == png_data
+
+    @patch("trellis.senses.web.capture_display")
+    def test_endpoint_returns_metadata_headers(self, mock_capture):
         from starlette.testclient import TestClient
 
         from trellis.hands.display_capture import DisplayCapture
@@ -227,32 +262,22 @@ class TestScreenshotEndpoint:
             timestamp="2026-03-27T12:00:00Z",
         )
 
-        with patch("trellis.senses.web.list_monitors", return_value=[
-            {"index": 0, "left": 0, "top": 0, "width": 3840, "height": 1080},
-            {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080},
-        ]):
-            app = self._make_app()
-            client = TestClient(app)
-            resp = client.post("/api/screenshot", json={})
+        app = self._make_app()
+        client = TestClient(app)
+        resp = client.post("/api/screenshot", json={})
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "image" in data
-        assert "metadata" in data
-        assert "timestamp" in data["metadata"]
-        assert "display" in data["metadata"]
-        assert data["metadata"]["display"]["width"] == 1920
-        assert data["metadata"]["display"]["height"] == 1080
-        assert data["metadata"]["monitors_available"] == 2
+        assert resp.headers["x-screenshot-timestamp"] == "2026-03-27T12:00:00Z"
+        assert resp.headers["x-screenshot-width"] == "1920"
+        assert resp.headers["x-screenshot-height"] == "1080"
+        assert resp.headers["x-screenshot-monitor"] == "1"
 
     @patch("trellis.senses.web.capture_display", side_effect=RuntimeError("No display"))
     def test_endpoint_handles_failure(self, mock_capture):
         from starlette.testclient import TestClient
 
-        with patch("trellis.senses.web.list_monitors", return_value=[]):
-            app = self._make_app()
-            client = TestClient(app)
-            resp = client.post("/api/screenshot", json={})
+        app = self._make_app()
+        client = TestClient(app)
+        resp = client.post("/api/screenshot", json={})
 
         assert resp.status_code == 500
         data = resp.json()
