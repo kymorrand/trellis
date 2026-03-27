@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-27 — Sprint 5: Screenshot Regression Testing
+
+Visual regression testing infrastructure for the Trellis web interface. Captures screenshots across all circadian phases and viewport sizes, then compares against saved baselines to catch unintended visual changes.
+
+### Screenshot Comparer (`trellis/testing/screenshot.py`)
+
+- **`ScreenshotComparer`** class -- pixel-level image comparison with configurable diff threshold. Uses Pillow for image loading and comparison.
+- **`CompareResult`** dataclass -- holds pass/fail status, diff ratio, pixel counts, and paths to baseline, current, and diff images.
+- **Diff image generation** -- highlights changed pixels in red on a dimmed version of the baseline for easy visual identification.
+
+### CLI Tool (`scripts/screenshot_test.py`)
+
+- **`--baseline` mode** -- captures reference screenshots for all phase x viewport combinations (15 total: 5 phases x 3 viewports).
+- **Validation mode** -- compares current screenshots against baselines, reports diff percentages, generates diff images for failures, exits with appropriate code (0=pass, 1=fail, 2=no baselines).
+- **Filtering** -- `--phase` and `--viewport` flags for testing individual combinations.
+- **Viewports** -- mobile (375x812), desktop (1440x900), kiosk (2560x1600 with `?kiosk=true`).
+- **Circadian locking** -- uses `TrellisCircadian.lockToPhase()` to capture each phase deterministically.
+- **Self-contained** -- starts web server programmatically via uvicorn in a thread, finds free port automatically.
+
+### Testing (`tests/test_screenshot_system.py`)
+
+- 20 unit tests covering: identical image comparison, completely different images, partial diffs with correct ratio calculation, threshold boundary behavior (below/at/above/zero/high), diff image generation (valid PNG, red highlights, dimmed unchanged pixels, not generated on pass), missing baseline error handling, save_baseline operations, CompareResult dataclass fields.
+
+### Dependencies Added
+
+- `playwright>=1.40.0` (dev) -- browser automation for screenshot capture
+- `Pillow>=10.0.0` (dev) -- image loading, comparison, and diff generation
+
+---
+
 ## 2026-03-23 — Sprint 4: Inbox Interface Backend (MOR-31)
 
 Ivy gains an intelligent inbox -- drop anything in, get classification, vault matching, urgency detection, and routing proposals with confidence scores. Kyle approves, redirects, or archives.
