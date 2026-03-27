@@ -1,0 +1,182 @@
+/* ==============================================
+   Debug Capture Panel — Gardener's Notebook
+   Dev-mode overlay for triggering display screenshots.
+   Only visible on localhost or with ?debug param.
+   ============================================== */
+
+.debug-capture {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9999;
+  max-width: 280px;
+  width: 280px;
+  background: oklch(95% 0.01 80 / 0.92);
+  border: 1px solid oklch(75% 0.02 80);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px oklch(20% 0.01 80 / 0.12);
+  font-family: 'Recursive', 'SF Mono', monospace;
+  font-size: 12px;
+  color: oklch(30% 0.02 80);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.debug-capture[data-hidden="true"] {
+  display: none;
+}
+
+/* Header bar */
+.debug-capture__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid oklch(85% 0.01 80);
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-capture__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: oklch(45% 0.02 80);
+}
+
+.debug-capture__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.debug-capture__toggle,
+.debug-capture__close {
+  background: none;
+  border: none;
+  color: oklch(55% 0.02 80);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.debug-capture__toggle:hover,
+.debug-capture__close:hover {
+  color: oklch(30% 0.02 80);
+}
+
+/* Collapsible body */
+.debug-capture__body {
+  max-height: 300px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+  padding: 12px;
+}
+
+.debug-capture[data-collapsed="true"] .debug-capture__body {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Capture button */
+.debug-capture__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  background: oklch(55% 0.12 150);
+  color: oklch(98% 0.005 150);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.debug-capture__btn:hover {
+  background: oklch(50% 0.12 150);
+}
+
+.debug-capture__btn:active {
+  transform: scale(0.98);
+}
+
+.debug-capture__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Loading state — pulsing button */
+.debug-capture__btn--loading {
+  animation: debug-capture-pulse 1s ease-in-out infinite;
+}
+
+@keyframes debug-capture-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Shortcut hint */
+.debug-capture__shortcut {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 10px;
+  color: oklch(60% 0.01 80);
+  letter-spacing: 0.02em;
+}
+
+/* Status area */
+.debug-capture__status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: oklch(92% 0.008 80 / 0.6);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: oklch(40% 0.02 80);
+  transition: border-color 0.3s ease, background 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.debug-capture__status:empty {
+  display: none;
+}
+
+/* Success flash */
+.debug-capture__status--success {
+  border-color: oklch(55% 0.12 150);
+  background: oklch(92% 0.03 150 / 0.3);
+}
+
+/* Error state */
+.debug-capture__status--error {
+  border-color: oklch(55% 0.15 25);
+  color: oklch(40% 0.08 25);
+}
+
+/* Status detail rows */
+.debug-capture__detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.debug-capture__detail-label {
+  color: oklch(55% 0.01 80);
+}
+
+.debug-capture__detail-value {
+  font-weight: 600;
+}

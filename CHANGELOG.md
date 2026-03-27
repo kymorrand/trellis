@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-27 — Debug Capture Panel (Dev Mode)
+
+Floating dev-mode panel for triggering display screenshot captures from the browser. Only activates on localhost or with `?debug` query parameter.
+
+### New Files
+
+- **`trellis/static/js/debug-capture.js`** — Self-initializing IIFE module. Creates a floating bottom-right panel with a "Capture for Ivy" button that POSTs to `/api/screenshot`. Shows capture metadata (timestamp, display dimensions) on success, error messages on failure. Keyboard shortcut Ctrl+Shift+S (Cmd+Shift+S on Mac). Collapse/expand state persisted in sessionStorage. Close button hides until page reload.
+- **`trellis/static/debug-panel.css`** — Warm cream panel styling using oklch colors that complement the circadian system. Muted green capture button ("garden" accent), smooth collapse/expand transitions, success flash and error border states. z-index 9999 to float above page content without interfering with grain overlay.
+
+### Modified Files
+
+- **`trellis/static/start.html`** — Added debug panel CSS and JS includes before closing `</body>`.
+- **`trellis/static/canvas.html`** — Added debug panel CSS and JS includes before closing `</body>`.
+- **`trellis/static/brief.html`** — Added debug panel CSS and JS includes before closing `</body>`.
+- **`trellis/static/inbox.html`** — Added debug panel CSS and JS includes before closing `</body>`.
+- **`trellis/static/garden.html`** — Added debug panel CSS and JS includes before closing `</body>`.
+
+---
+
 ## 2026-03-27 — Fix Screenshot Capture Timeout (SSE Stream)
 
 `!screenshot` and `!screenshotnow` Discord commands failed with `TimeoutError` because Playwright's `wait_until="networkidle"` never resolves when the page has a persistent SSE connection (`/api/agent/state/stream`).
