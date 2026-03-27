@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-03-27 — Sprint 5: Screenshot Regression Testing
+
+Visual regression testing infrastructure for the Trellis web interface. Captures screenshots across all circadian phases and viewport sizes, then compares against saved baselines to catch unintended visual changes.
+
+### Screenshot Comparer (`trellis/testing/screenshot.py`)
+
+- **`ScreenshotComparer`** class -- pixel-level image comparison with configurable diff threshold. Uses Pillow for image loading and comparison.
+- **`CompareResult`** dataclass -- holds pass/fail status, diff ratio, pixel counts, and paths to baseline, current, and diff images.
+- **Diff image generation** -- highlights changed pixels in red on a dimmed version of the baseline for easy visual identification.
+
+### CLI Tool (`scripts/screenshot_test.py`)
+
+- **`--baseline` mode** -- captures reference screenshots for all phase x viewport combinations (15 total: 5 phases x 3 viewports).
+- **Validation mode** -- compares current screenshots against baselines, reports diff percentages, generates diff images for failures, exits with appropriate code (0=pass, 1=fail, 2=no baselines).
+- **Filtering** -- `--phase` and `--viewport` flags for testing individual combinations.
+- **Viewports** -- mobile (375x812), desktop (1440x900), kiosk (2560x1600 with `?kiosk=true`).
+- **Circadian locking** -- uses `TrellisCircadian.lockToPhase()` to capture each phase deterministically.
+- **Self-contained** -- starts web server programmatically via uvicorn in a thread, finds free port automatically.
+
+### Phase Lock Dev Controls (`trellis/static/start.html` + `circadian.js`)
+
+- **Dev panel overlay** -- floating panel with Dawn/Day/Afternoon/Evening/Night/Auto buttons. Visible with `?dev=true`, toggles with Shift+D.
+- **Background gradient fix** -- `lockToPhase()` now sets `--bg-top` and `--bg-bottom` CSS vars (previously only set color palette + typography).
+
+### Testing (`tests/test_screenshot_system.py`)
+
+- 20 unit tests covering: identical image comparison, completely different images, partial diffs with correct ratio calculation, threshold boundary behavior (below/at/above/zero/high), diff image generation (valid PNG, red highlights, dimmed unchanged pixels, not generated on pass), missing baseline error handling, save_baseline operations, CompareResult dataclass fields.
+
+### Dependencies Added
+
+- `playwright>=1.40.0` (dev) -- browser automation for screenshot capture
+- `Pillow>=10.0.0` (dev) -- image loading, comparison, and diff generation
+
+---
+
 ## 2026-03-26 — Start Screen Readability for Kiosk Display
 
 - **Viewport-scaled typography** on Start screen -- all text elements now use `clamp()` with `vw` units so they scale from 1080p to 2560x1600. Greeting renders at 80-120px on kiosk, date/clock at 32-48px, status at 24-32px, pathway titles at 28-36px, descriptions at 20-24px.
