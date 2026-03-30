@@ -163,6 +163,14 @@ def create_app(
 
     vault_path = config["vault_path"] if config else None
 
+    # ─── Quest API (Root's scope — MOR-38) ────────────────────────
+    if vault_path:
+        from trellis.core.quest_api import create_quest_router
+
+        quests_dir = Path(vault_path) / "_ivy" / "quests"
+        quests_dir.mkdir(parents=True, exist_ok=True)
+        app.include_router(create_quest_router(quests_dir))
+
     # ─── Pages ────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)

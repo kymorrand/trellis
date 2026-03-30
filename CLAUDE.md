@@ -57,7 +57,7 @@ Max 8 tool call rounds per request. Local models (Ollama) get chat-only path —
 ## Tech Stack
 - Python 3.12+, no LangChain, no third-party agent frameworks
 - Anthropic SDK for Claude API (primary cloud model)
-- Ollama for local inference (qwen3:14b primary, llama3.2:3b fast)
+- Ollama for local inference (qwen3.5:9b chat, qwen3.5:35b-a3b fast eval)
 - discord.py for Discord integration
 - FastAPI + Uvicorn for web interface
 - GSAP for UI animation (client-side JS)

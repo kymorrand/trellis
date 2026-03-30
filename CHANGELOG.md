@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-03-30 — Quest System Foundation (Trellis v1.0 Week 1)
+
+### MOR-36: Pre-build Fixes
+- **36a:** Verified kyle.md loading — `load_kyle()` and `load_kyle_local()` already load into system prompts in both Discord and CLI senses. No changes needed.
+- **36b:** Swapped local model from `qwen3:14b` to Qwen3.5 family — `qwen3.5:9b` (dense, local chat) and `qwen3.5:35b-a3b` (MoE, tick scheduler/fast eval).
+- **36c:** Enhanced local model hallucination guard in `load_soul_local()` — added explicit disclaimers against claiming screenshot, web search, and task dispatch capabilities.
+
+### MOR-37: Quest File Schema & Loader
+- New `trellis/core/quest.py` module with `Quest` dataclass, `QuestStep`, `load_quest()`, `save_quest()`, `list_quests()`.
+- Quest files use YAML frontmatter + markdown body sections at `_ivy/quests/{id}.md`.
+- Full round-trip fidelity: load → save → load produces identical state.
+- Created `_ivy/quests/_templates/research-quest.md` and `writing-quest.md` templates.
+- Sample quest: `_ivy/quests/mm-business-model-research.md`.
+
+### MOR-38: Quest REST API Endpoints
+- New `trellis/core/quest_api.py` with FastAPI router for quest CRUD.
+- `GET /api/quests` — list all quests with summary state, sorted by priority.
+- `GET /api/quests/{id}` — full quest detail (all frontmatter + body sections).
+- `POST /api/quests` — create quest from scratch or from template.
+- `PATCH /api/quests/{id}` — partial update of frontmatter fields.
+- All endpoints require `Authorization: Bearer {TRELLIS_API_KEY}`.
+- 83 new tests across `test_quest.py` and `test_quest_api.py`.
+
+---
+
 ## 2026-03-27 — Screenshot Comparison Overlay Panel (Phase 2)
 
 ### Added

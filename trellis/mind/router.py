@@ -5,7 +5,7 @@ Routes inference requests to local (Ollama), light cloud (Haiku), or
 full cloud (Sonnet) based on task complexity, user overrides, and budget.
 
 Three-tier routing:
-    /local prefix    → Force local (Ollama qwen3:14b)
+    /local prefix    → Force local (Ollama qwen3.5:9b)
     /claude prefix   → Force cloud (Claude Sonnet via Anthropic)
     Simple messages  → Local (greetings, short questions, casual chat)
     Medium messages  → Light cloud (Haiku — conversational, moderate complexity)
@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 CLOUD_MODEL = "claude-sonnet-4-20250514"
 LIGHT_MODEL = "claude-haiku-4-5-20251001"
-LOCAL_MODEL = "qwen3:14b"
+LOCAL_MODEL = "qwen3.5:9b"  # Dense model — local chat quality
+LOCAL_MODEL_FAST = "qwen3.5:35b-a3b"  # MoE model — tick scheduler / fast eval (~112 tok/s)
 
 LOCAL_INDICATOR = "\U0001f33f"  # 🌿
 LIGHT_INDICATOR = "\u2601\ufe0f"  # ☁️ (light cloud — same icon, cheaper)

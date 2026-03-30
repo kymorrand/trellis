@@ -117,11 +117,26 @@ class TestLoadSoulLocal:
 
     def test_condensed_has_no_tool_access_warning(self, agents_dir):
         local = load_soul_local(agents_dir=agents_dir)
-        assert "do NOT have access to any tools" in local
+        assert "do not have access to tools" in local
 
     def test_condensed_has_claude_redirect(self, agents_dir):
         local = load_soul_local(agents_dir=agents_dir)
         assert "/claude" in local
+
+    def test_condensed_disclaims_screenshots(self, agents_dir):
+        """MOR-36c: Local model must not claim screenshot capability."""
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "taking screenshots" in local
+
+    def test_condensed_disclaims_web_search(self, agents_dir):
+        """MOR-36c: Local model must not claim web search capability."""
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "searching the web" in local
+
+    def test_condensed_disclaims_dispatching(self, agents_dir):
+        """MOR-36c: Local model must not claim dispatch capability."""
+        local = load_soul_local(agents_dir=agents_dir)
+        assert "dispatching tasks" in local
 
     def test_missing_soul_returns_empty(self, tmp_path):
         assert load_soul_local(agents_dir=str(tmp_path)) == ""

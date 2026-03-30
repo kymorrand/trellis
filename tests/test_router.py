@@ -2,7 +2,23 @@
 
 import pytest
 
-from trellis.mind.router import ModelRouter
+from trellis.mind.router import LOCAL_MODEL, LOCAL_MODEL_FAST, ModelRouter
+
+
+class TestModelConstants:
+    """MOR-36b: Verify Qwen3.5 model swap from qwen3:14b."""
+
+    def test_local_model_is_qwen35_9b(self):
+        assert LOCAL_MODEL == "qwen3.5:9b"
+
+    def test_local_model_fast_is_qwen35_moe(self):
+        assert LOCAL_MODEL_FAST == "qwen3.5:35b-a3b"
+
+    def test_no_qwen3_14b_references(self):
+        """Ensure old model name is completely gone."""
+        import trellis.mind.router as router_module
+        source = open(router_module.__file__, encoding="utf-8").read()
+        assert "qwen3:14b" not in source
 
 
 class TestClassify:

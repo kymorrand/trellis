@@ -440,7 +440,7 @@ class TestAgentBrain:
         from trellis.mind.router import LOCAL_INDICATOR, RouteResult
         mock_router.route = AsyncMock(return_value=RouteResult(
             response="local response",
-            model_used="qwen3:14b",
+            model_used="qwen3.5:9b",
             is_local=True,
             indicator=LOCAL_INDICATOR,
         ))
@@ -676,7 +676,7 @@ class TestAgentBrain:
         mock_router.classify.return_value = "force_local"
         from trellis.mind.router import RouteResult
         mock_router.route = AsyncMock(return_value=RouteResult(
-            response="local response", model_used="qwen3:14b", is_local=True, indicator="🌿"
+            response="local response", model_used="qwen3.5:9b", is_local=True, indicator="🌿"
         ))
 
         event = Event(source="cli", content="/local yes", metadata={"force_cloud": True})

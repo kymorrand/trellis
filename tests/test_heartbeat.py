@@ -115,7 +115,7 @@ class TestParseJournalStats:
         journal_path.write_text(
             "# Ivy Journal — 2026-03-21\n\n"
             "## 10:00:00 | MESSAGE_IN\nKyle in #general\nHello\n\n---\n\n"
-            "## 10:00:05 | MESSAGE_OUT\nIvy → #general via qwen3:14b\nHi Kyle!\n\n---\n\n"
+            "## 10:00:05 | MESSAGE_OUT\nIvy → #general via qwen3.5:9b\nHi Kyle!\n\n---\n\n"
             "## 10:05:00 | MESSAGE_IN\nKyle in #general\nSave this: test\n\n---\n\n"
             "## 10:05:01 | VAULT_SAVE\nSave request from Kyle\n\n---\n\n"
             "## 10:05:02 | MESSAGE_OUT\nIvy → #general via claude\nSaved!\n\n---\n\n",
