@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-30 — Quest Tick Scheduler (Trellis v1.0 Week 2)
+
+### MOR-42: Quest Tick Scheduler + Six-Phase Execution
+- New `trellis/core/tick.py` — async scheduler with per-quest tick loops, six-phase execution (Awake, Input, Plan, Execute, Persist, Notify), tick window enforcement, time-box abort, and bonus tick trigger.
+- New `trellis/core/events.py` — `EventBus` with async pub/sub, `QuestEvent` dataclass, `TickPhase` and `EventType` enums for quest lifecycle notifications.
+- Pluggable execute callback (`ExecuteCallback` type) — stub executor for Week 2, real LLM integration comes later.
+- 43 new tests in `tests/core/test_tick.py` covering interval/window parsing, phase ordering, timeout enforcement, scheduler lifecycle, bonus ticks, and event emission.
+
 ## 2026-03-30 — Quest System Foundation (Trellis v1.0 Week 1)
 
 ### MOR-36: Pre-build Fixes
