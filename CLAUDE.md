@@ -168,6 +168,24 @@ any new CLAUDE.md rules. If no rules were added, the section says "None — clea
 - Garden reports: `_ivy/reports/garden-report-{date}.md`
 - Items needing Kyle: `_ivy/queue/`
 
+## Cross-Repo Contracts
+
+When Root builds a new Greenhouse endpoint that Bloom will consume in trellis-app, the response shape **must** match the corresponding TypeScript type in `kymorrand/trellis-app/lib/types.ts`. This is the single source of truth for API contracts.
+
+Before finalizing any new endpoint:
+1. Check `lib/types.ts` in trellis-app for the expected response shape
+2. Build your Pydantic model to match it exactly (field names, nesting, nullability)
+3. If the type doesn't exist yet, flag it — Thorn defines contracts before dispatch
+
+Current contracts:
+- `SidequestSummary` / `SidequestListResponse` — `GET /api/quests`
+- `SidequestDetail` — `GET /api/quests/{id}`
+- `Question` / `QuestionsResponse` — `GET /api/quests/{id}/questions`
+- `Approval` / `ApprovalsResponse` — `GET /api/approvals`
+- `ActivityEvent` / `ActivityResponse` — `GET /api/activity` (Week 3)
+- `GardenArtifact` / `GardenResponse` — `GET /api/garden/artifacts` (Week 3)
+- `ChatRequest` — `POST /api/chat` (request body; response is SSE stream, not JSON)
+
 ## What NOT to Do
 <!-- This section grows over time. Every mistake becomes a rule. -->
 - Don't use `pip install` directly — use `pip install -e ".[dev]"` from repo root
