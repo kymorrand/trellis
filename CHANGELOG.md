@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-30 — Circuit Breakers Wired into Tick Loop
+
+### MOR-71: Wire Circuit Breakers into Tick Loop
+- Integrated `CircuitBreakerRunner` into `QuestScheduler._quest_tick_loop()`:
+  - `pre_tick_check()` called before every tick (regular and bonus). If a breaker trips, the tick is skipped and a `TICK_SKIPPED` event is emitted.
+  - `post_tick()` called after every tick to update breaker state (failure counting, budget tracking, cooldown multipliers).
+- Added `TICK_SKIPPED` event type to `EventType` enum in `trellis/core/events.py`.
+- Cooldown multiplier from `FailureBreaker` now applies to the inter-tick sleep interval.
+- When a breaker pauses a quest (e.g., budget exhausted), the tick loop exits and the quest leaves the active set.
+- Exposed `circuit_breakers` property on `QuestScheduler` for external access.
+- 6 new integration tests in `tests/core/test_tick_circuit_breakers.py`.
+- All 784 tests pass, lint clean.
+
 ## 2026-03-30 — Circuit Breakers + Garden Content API (Trellis v1.0 Week 3)
 
 ### MOR-66: Circuit Breakers for Tick Scheduler

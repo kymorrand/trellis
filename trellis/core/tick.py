@@ -24,6 +24,7 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
+from trellis.core.circuit_breakers import CircuitBreakerRunner
 from trellis.core.events import EventBus, EventType, QuestEvent, TickPhase
 from trellis.core.quest import Quest, list_quests, load_quest, save_quest
 
@@ -435,6 +436,7 @@ class QuestScheduler:
             execute_fn=execute_fn,
             max_tick_duration=max_tick_duration,
         )
+        self._circuit_breakers = CircuitBreakerRunner(event_bus)
         self._rescan_interval = rescan_interval
         self._now_fn = now_fn or datetime.now
         self._sleep_fn = sleep_fn or asyncio.sleep
@@ -450,6 +452,11 @@ class QuestScheduler:
     def running(self) -> bool:
         """Whether the scheduler is currently running."""
         return self._running
+
+    @property
+    def circuit_breakers(self) -> CircuitBreakerRunner:
+        """The circuit breaker runner used by this scheduler."""
+        return self._circuit_breakers
 
     @property
     def active_quest_ids(self) -> list[str]:
@@ -630,6 +637,45 @@ class QuestScheduler:
 
             # Run the tick
             tick_num = self._tick_counts.get(quest_id, 0) + 1
+
+            # Pre-tick circuit breaker check
+            can_proceed = await self._circuit_breakers.pre_tick_check(
+                quest, tick_num,
+            )
+            if not can_proceed:
+                logger.info(
+                    "[quest:%s] Tick %d skipped by circuit breaker",
+                    quest_id,
+                    tick_num,
+                )
+                await self._event_bus.publish(QuestEvent(
+                    event_type=EventType.TICK_SKIPPED,
+                    quest_id=quest_id,
+                    data={"reason": "circuit_breaker", "tick_number": tick_num},
+                ))
+                # Reload quest — breaker may have paused it
+                try:
+                    quest = load_quest(quest_path)
+                except Exception:
+                    logger.error("Failed to reload quest %s after breaker skip", quest_id)
+                    break
+                if quest.status not in _TICKABLE_STATUSES:
+                    logger.info(
+                        "[quest:%s] Paused by circuit breaker, stopping tick loop",
+                        quest_id,
+                    )
+                    break
+                # Wait the normal interval before retrying
+                bonus_event.clear()
+                try:
+                    await asyncio.wait_for(
+                        self._wait_for_bonus(bonus_event),
+                        timeout=interval,
+                    )
+                except TimeoutError:
+                    pass
+                continue
+
             ctx = TickContext(
                 quest=quest,
                 quest_path=quest_path,
@@ -638,6 +684,13 @@ class QuestScheduler:
             )
 
             success = await self._executor.run_tick(ctx)
+
+            # Post-tick circuit breaker update
+            step_index = ctx.plan.get("next_step_index", -1) if ctx.plan else -1
+            cooldown = await self._circuit_breakers.post_tick(
+                quest, tick_num, success, step_index,
+            )
+
             if success:
                 self._tick_counts[quest_id] = tick_num
 
@@ -657,28 +710,68 @@ class QuestScheduler:
                 )
                 break
 
-            # Wait for next tick or bonus trigger
+            # Wait for next tick or bonus trigger (apply cooldown multiplier)
+            effective_interval = interval * cooldown
             bonus_event.clear()
             try:
                 await asyncio.wait_for(
                     self._wait_for_bonus(bonus_event),
-                    timeout=interval,
+                    timeout=effective_interval,
                 )
                 # Bonus tick triggered — run another tick immediately
-                bonus_ctx = TickContext(
-                    quest=quest,
-                    quest_path=quest_path,
-                    tick_number=self._tick_counts.get(quest_id, 0) + 1,
-                    is_bonus=True,
+                bonus_tick_num = self._tick_counts.get(quest_id, 0) + 1
+
+                # Pre-tick circuit breaker check for bonus tick
+                bonus_can_proceed = await self._circuit_breakers.pre_tick_check(
+                    quest, bonus_tick_num,
                 )
-                success = await self._executor.run_tick(bonus_ctx)
-                if success:
-                    self._tick_counts[quest_id] = bonus_ctx.tick_number
-                # Reload quest after bonus tick
-                try:
-                    quest = load_quest(quest_path)
-                except Exception:
-                    break
+                if not bonus_can_proceed:
+                    logger.info(
+                        "[quest:%s] Bonus tick %d skipped by circuit breaker",
+                        quest_id,
+                        bonus_tick_num,
+                    )
+                    await self._event_bus.publish(QuestEvent(
+                        event_type=EventType.TICK_SKIPPED,
+                        quest_id=quest_id,
+                        data={
+                            "reason": "circuit_breaker",
+                            "tick_number": bonus_tick_num,
+                            "is_bonus": True,
+                        },
+                    ))
+                    # Reload quest — breaker may have paused it
+                    try:
+                        quest = load_quest(quest_path)
+                    except Exception:
+                        break
+                    if quest.status not in _TICKABLE_STATUSES:
+                        break
+                else:
+                    bonus_ctx = TickContext(
+                        quest=quest,
+                        quest_path=quest_path,
+                        tick_number=bonus_tick_num,
+                        is_bonus=True,
+                    )
+                    bonus_success = await self._executor.run_tick(bonus_ctx)
+
+                    # Post-tick circuit breaker update for bonus tick
+                    bonus_step = (
+                        bonus_ctx.plan.get("next_step_index", -1)
+                        if bonus_ctx.plan else -1
+                    )
+                    await self._circuit_breakers.post_tick(
+                        quest, bonus_tick_num, bonus_success, bonus_step,
+                    )
+
+                    if bonus_success:
+                        self._tick_counts[quest_id] = bonus_tick_num
+                    # Reload quest after bonus tick
+                    try:
+                        quest = load_quest(quest_path)
+                    except Exception:
+                        break
             except TimeoutError:
                 # Normal interval elapsed — loop will tick again
                 pass

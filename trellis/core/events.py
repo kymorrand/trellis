@@ -45,6 +45,7 @@ class EventType(str, Enum):
     TICK_COMPLETED = "tick.completed"
     TICK_FAILED = "tick.failed"
     TICK_TIMED_OUT = "tick.timed_out"
+    TICK_SKIPPED = "tick.skipped"
 
     # Quest state changes
     QUEST_STATUS_CHANGED = "quest.status_changed"
