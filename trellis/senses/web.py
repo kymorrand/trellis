@@ -185,6 +185,26 @@ def create_app(
             soul=_soul,
         ))
 
+    # ─── Question + Approval + Quest Events API (Root's scope — MOR-43) ──
+    if vault_path:
+        from trellis.core.events import EventBus
+
+        _event_bus = EventBus()
+        _quests_dir = Path(vault_path) / "_ivy" / "quests"
+        _approvals_dir = Path(vault_path) / "_ivy" / "approvals"
+
+        from trellis.core.question_api import create_question_router
+
+        app.include_router(create_question_router(_quests_dir, _event_bus))
+
+        from trellis.core.approval_api import create_approval_router
+
+        app.include_router(create_approval_router(_approvals_dir, _event_bus))
+
+        from trellis.core.quest_events_api import create_quest_events_router
+
+        app.include_router(create_quest_events_router(_quests_dir, _event_bus))
+
     # ─── Pages ────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)

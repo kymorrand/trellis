@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-30 — Question, Approval & Quest Events API (Trellis v1.0 Week 2)
+
+### MOR-43: Question + Approval + SSE Endpoints
+- New `trellis/core/questions.py` — Question dataclass, markdown parser and serializer for the `## Questions` section of quest files. Structured format: `### Q-001 [urgency] [status]` with Context, Suggestions, and Answer fields. Round-trip safe.
+- New `trellis/core/approvals.py` — Approval dataclass and `ApprovalStore` with file-based CRUD. Approvals stored as individual JSON files in `_ivy/approvals/` for easy cross-quest listing.
+- New `trellis/core/question_api.py` — FastAPI router: `GET /api/quests/{id}/questions` (list parsed questions), `POST /api/quests/{id}/questions/{qid}/answer` (answer via text or suggestion index, triggers bonus tick event).
+- New `trellis/core/approval_api.py` — FastAPI router: `GET /api/approvals` (list pending across all quests), `POST /api/approvals/{id}` (approve or reject with reason, emits event for scheduler).
+- New `trellis/core/quest_events_api.py` — SSE endpoint `GET /api/quest-events` subscribing to EventBus. Sends initial quest state snapshot on connect, streams events as `data: {json}\n\n`, keepalive pings every 30s, graceful disconnect/unsubscribe.
+- All endpoints require Bearer auth via `TRELLIS_API_KEY` (same pattern as quest and chat APIs).
+- Routers registered in `trellis/senses/web.py` via factory functions sharing a single EventBus instance.
+- 58 new tests across `tests/core/test_questions.py`, `tests/core/test_approvals.py`, `tests/core/test_quest_events_api.py` covering parsing, serialization, round-trip fidelity, CRUD, API auth, event emission, and SSE format compliance.
+
 ## 2026-03-30 — UI Message Stream Protocol (Trellis v1.0 Week 2)
 
 ### MOR-44: Chat Stream Endpoint
