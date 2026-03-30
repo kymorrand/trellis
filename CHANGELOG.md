@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-30 — UI Message Stream Protocol (Trellis v1.0 Week 2)
+
+### MOR-44: Chat Stream Endpoint
+- New `trellis/core/chat_stream.py` — SSE streaming endpoint implementing the Vercel AI SDK v6 UI Message Stream Protocol v1. Streams Ivy's responses token-by-token as `{"type":"text","text":"..."}` events, with `finish` and `error` event types.
+- POST `/api/chat` accepts a `messages` conversation history array, calls the Anthropic streaming API, and pipes tokens as SSE events compatible with `useChat` + `DefaultChatTransport`.
+- Reusable `stream_sse_events()` async generator wraps any async token iterator into protocol-compliant SSE output.
+- Bearer auth via `TRELLIS_API_KEY` (same pattern as quest API).
+- Router registered in `trellis/senses/web.py` via `create_chat_router()` factory.
+- 19 new tests in `tests/test_chat_stream.py` covering SSE encoding, streaming, auth, error handling, message forwarding, and format compliance.
+
 ## 2026-03-30 — Quest Tick Scheduler (Trellis v1.0 Week 2)
 
 ### MOR-42: Quest Tick Scheduler + Six-Phase Execution

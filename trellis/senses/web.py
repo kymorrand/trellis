@@ -171,6 +171,20 @@ def create_app(
         quests_dir.mkdir(parents=True, exist_ok=True)
         app.include_router(create_quest_router(quests_dir))
 
+    # ─── Chat Stream API (Root's scope — MOR-44) ─────────────────
+    if config and config.get("anthropic_key"):
+        import anthropic as _anthropic
+
+        from trellis.core.chat_stream import create_chat_router
+        from trellis.mind.soul import load_soul
+
+        _chat_client = _anthropic.AsyncAnthropic(api_key=config["anthropic_key"])
+        _soul = load_soul()
+        app.include_router(create_chat_router(
+            anthropic_client=_chat_client,
+            soul=_soul,
+        ))
+
     # ─── Pages ────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
