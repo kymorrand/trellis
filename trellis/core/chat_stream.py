@@ -1,14 +1,17 @@
 """
-trellis.core.chat_stream — UI Message Stream Protocol (Vercel AI SDK v6)
+trellis.core.chat_stream — UI Message Stream Protocol v1 (Vercel AI SDK v6)
 
 Implements the SSE streaming protocol expected by the Vercel AI SDK v6
 `useChat` hook with `DefaultChatTransport`. The frontend POST /api/chat
 proxy forwards requests here, and we stream SSE events back.
 
 Protocol reference (UI Message Stream Protocol v1):
-    data: {"type":"text","text":"token"}
-    data: {"type":"finish","finishReason":"stop","usage":{...}}
-    data: {"type":"error","error":"message"}
+    data: {"type":"start"}
+    data: {"type":"text-start","id":"<unique-id>"}
+    data: {"type":"text-delta","id":"<unique-id>","delta":"token"}
+    data: {"type":"text-end","id":"<unique-id>"}
+    data: {"type":"finish","finishReason":"stop"}
+    data: {"type":"error","errorText":"message"}
 
 Each line is prefixed with `data: ` and followed by `\\n\\n` (standard SSE).
 
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends
@@ -66,30 +70,34 @@ class ChatRequest(BaseModel):
 # ─── SSE encoding helpers ───────────────────────────────────
 
 
-def encode_text_part(text: str) -> dict[str, Any]:
-    """Create a text message part."""
-    return {"type": "text", "text": text}
+def encode_start_part() -> dict[str, Any]:
+    """Create a stream start event."""
+    return {"type": "start"}
 
 
-def encode_finish_part(
-    finish_reason: str,
-    prompt_tokens: int = 0,
-    completion_tokens: int = 0,
-) -> dict[str, Any]:
-    """Create a finish message part."""
-    return {
-        "type": "finish",
-        "finishReason": finish_reason,
-        "usage": {
-            "promptTokens": prompt_tokens,
-            "completionTokens": completion_tokens,
-        },
-    }
+def encode_text_start(text_id: str) -> dict[str, Any]:
+    """Create a text-start event for a new text part."""
+    return {"type": "text-start", "id": text_id}
+
+
+def encode_text_delta(text_id: str, delta: str) -> dict[str, Any]:
+    """Create a text-delta event with a token chunk."""
+    return {"type": "text-delta", "id": text_id, "delta": delta}
+
+
+def encode_text_end(text_id: str) -> dict[str, Any]:
+    """Create a text-end event to close a text part."""
+    return {"type": "text-end", "id": text_id}
+
+
+def encode_finish_part(finish_reason: str) -> dict[str, Any]:
+    """Create a finish event. No usage field — the strict schema rejects extras."""
+    return {"type": "finish", "finishReason": finish_reason}
 
 
 def encode_error_part(error: str) -> dict[str, Any]:
-    """Create an error message part."""
-    return {"type": "error", "error": error}
+    """Create an error event with errorText (not error) per protocol v1."""
+    return {"type": "error", "errorText": error}
 
 
 def encode_sse_event(data: dict[str, Any]) -> str:
@@ -105,12 +113,18 @@ async def stream_sse_events(
 ) -> AsyncIterator[str]:
     """Wrap an async token iterator into SSE-formatted events.
 
-    Yields ``data: {"type":"text","text":"..."}\\n\\n`` for each token,
-    then a finish event. If the iterator raises, yields an error event.
+    Emits the full UI Message Stream Protocol v1 sequence:
+        start -> text-start -> text-delta* -> text-end -> finish
+
+    If the iterator raises, yields an error event instead of finish.
     """
+    text_id = str(uuid.uuid4())
+    yield encode_sse_event(encode_start_part())
+    yield encode_sse_event(encode_text_start(text_id))
     try:
         async for token in tokens:
-            yield encode_sse_event(encode_text_part(token))
+            yield encode_sse_event(encode_text_delta(text_id, token))
+        yield encode_sse_event(encode_text_end(text_id))
         yield encode_sse_event(encode_finish_part("stop"))
     except Exception as exc:
         logger.error("Stream error: %s", exc)

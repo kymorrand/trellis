@@ -13,7 +13,10 @@ from httpx import ASGITransport, AsyncClient
 from trellis.core.chat_stream import (
     create_chat_router,
     encode_sse_event,
-    encode_text_part,
+    encode_start_part,
+    encode_text_start,
+    encode_text_delta,
+    encode_text_end,
     encode_finish_part,
     encode_error_part,
     stream_sse_events,
@@ -44,35 +47,40 @@ def _bad_auth_header() -> dict[str, str]:
 class TestSSEEncoding:
     """Test individual SSE encoding functions."""
 
-    def test_encode_text_part(self) -> None:
-        part = encode_text_part("Hello")
-        assert part == {"type": "text", "text": "Hello"}
+    def test_encode_start_part(self) -> None:
+        part = encode_start_part()
+        assert part == {"type": "start"}
+
+    def test_encode_text_start(self) -> None:
+        part = encode_text_start("abc-123")
+        assert part == {"type": "text-start", "id": "abc-123"}
+
+    def test_encode_text_delta(self) -> None:
+        part = encode_text_delta("abc-123", "Hello")
+        assert part == {"type": "text-delta", "id": "abc-123", "delta": "Hello"}
+
+    def test_encode_text_end(self) -> None:
+        part = encode_text_end("abc-123")
+        assert part == {"type": "text-end", "id": "abc-123"}
 
     def test_encode_finish_part(self) -> None:
-        part = encode_finish_part("stop", prompt_tokens=100, completion_tokens=50)
-        assert part == {
-            "type": "finish",
-            "finishReason": "stop",
-            "usage": {"promptTokens": 100, "completionTokens": 50},
-        }
-
-    def test_encode_finish_part_defaults(self) -> None:
         part = encode_finish_part("stop")
-        assert part["usage"]["promptTokens"] == 0
-        assert part["usage"]["completionTokens"] == 0
+        assert part == {"type": "finish", "finishReason": "stop"}
+        assert "usage" not in part
 
     def test_encode_error_part(self) -> None:
         part = encode_error_part("Something went wrong")
-        assert part == {"type": "error", "error": "Something went wrong"}
+        assert part == {"type": "error", "errorText": "Something went wrong"}
+        assert "error" not in part  # must use "errorText", not bare "error" key
 
     def test_encode_sse_event(self) -> None:
-        data = {"type": "text", "text": "hello"}
+        data = {"type": "start"}
         line = encode_sse_event(data)
         assert line == f"data: {json.dumps(data)}\n\n"
 
     def test_encode_sse_event_no_extra_newlines(self) -> None:
         """SSE events must end with exactly \\n\\n."""
-        line = encode_sse_event({"type": "text", "text": "x"})
+        line = encode_sse_event({"type": "start"})
         assert line.endswith("\n\n")
         assert not line.endswith("\n\n\n")
 
@@ -91,19 +99,27 @@ class TestStreamSSEEvents:
         async for event in stream_sse_events(fake_tokens()):
             events.append(event)
 
-        # Should have 3 text events + 1 finish event
-        assert len(events) == 4
+        parsed = [json.loads(e.removeprefix("data: ").strip()) for e in events]
 
-        # Check text events
+        # start + text-start + 3 text-delta + text-end + finish = 7
+        assert len(parsed) == 7
+
+        assert parsed[0]["type"] == "start"
+        assert parsed[1]["type"] == "text-start"
+        text_id = parsed[1]["id"]
+        assert text_id  # non-empty
+
+        # Check text-delta events
         for i, token in enumerate(["Hello", ", ", "Kyle!"]):
-            parsed = json.loads(events[i].removeprefix("data: ").strip())
-            assert parsed["type"] == "text"
-            assert parsed["text"] == token
+            assert parsed[2 + i]["type"] == "text-delta"
+            assert parsed[2 + i]["id"] == text_id
+            assert parsed[2 + i]["delta"] == token
 
-        # Check finish event
-        finish = json.loads(events[-1].removeprefix("data: ").strip())
-        assert finish["type"] == "finish"
-        assert finish["finishReason"] == "stop"
+        assert parsed[5]["type"] == "text-end"
+        assert parsed[5]["id"] == text_id
+
+        assert parsed[6]["type"] == "finish"
+        assert parsed[6]["finishReason"] == "stop"
 
     @pytest.mark.asyncio
     async def test_streams_error_on_exception(self) -> None:
@@ -115,12 +131,18 @@ class TestStreamSSEEvents:
         async for event in stream_sse_events(failing_tokens()):
             events.append(event)
 
-        # Should have 1 text event + 1 error event
-        assert len(events) == 2
+        parsed = [json.loads(e.removeprefix("data: ").strip()) for e in events]
 
-        error = json.loads(events[-1].removeprefix("data: ").strip())
-        assert error["type"] == "error"
-        assert "LLM exploded" in error["error"]
+        # start + text-start + 1 text-delta + 1 error = 4
+        assert len(parsed) == 4
+
+        assert parsed[0]["type"] == "start"
+        assert parsed[1]["type"] == "text-start"
+        assert parsed[2]["type"] == "text-delta"
+        assert parsed[2]["delta"] == "Start"
+
+        assert parsed[3]["type"] == "error"
+        assert "LLM exploded" in parsed[3]["errorText"]
 
     @pytest.mark.asyncio
     async def test_empty_stream_sends_finish(self) -> None:
@@ -132,9 +154,14 @@ class TestStreamSSEEvents:
         async for event in stream_sse_events(empty_tokens()):
             events.append(event)
 
-        assert len(events) == 1
-        finish = json.loads(events[0].removeprefix("data: ").strip())
-        assert finish["type"] == "finish"
+        parsed = [json.loads(e.removeprefix("data: ").strip()) for e in events]
+
+        # start + text-start + text-end + finish = 4
+        assert len(parsed) == 4
+        assert parsed[0]["type"] == "start"
+        assert parsed[1]["type"] == "text-start"
+        assert parsed[2]["type"] == "text-end"
+        assert parsed[3]["type"] == "finish"
 
 
 # ─── Endpoint integration tests ──────────────────────────────
@@ -250,14 +277,19 @@ class TestChatStreaming:
             if line.startswith("data: "):
                 events.append(json.loads(line.removeprefix("data: ")))
 
-        # 3 text events + 1 finish
-        assert len(events) == 4
+        # start + text-start + 3 text-delta + text-end + finish = 7
+        assert len(events) == 7
 
-        assert events[0] == {"type": "text", "text": "Hello"}
-        assert events[1] == {"type": "text", "text": ", "}
-        assert events[2] == {"type": "text", "text": "Kyle!"}
-        assert events[3]["type"] == "finish"
-        assert events[3]["finishReason"] == "stop"
+        assert events[0]["type"] == "start"
+        assert events[1]["type"] == "text-start"
+        text_id = events[1]["id"]
+
+        assert events[2] == {"type": "text-delta", "id": text_id, "delta": "Hello"}
+        assert events[3] == {"type": "text-delta", "id": text_id, "delta": ", "}
+        assert events[4] == {"type": "text-delta", "id": text_id, "delta": "Kyle!"}
+        assert events[5] == {"type": "text-end", "id": text_id}
+        assert events[6]["type"] == "finish"
+        assert events[6]["finishReason"] == "stop"
 
     @pytest.mark.asyncio
     async def test_streams_error_on_llm_failure(self) -> None:
@@ -292,7 +324,7 @@ class TestChatStreaming:
         # Should have at least an error event
         assert any(e["type"] == "error" for e in events)
         error_event = next(e for e in events if e["type"] == "error")
-        assert "Model unavailable" in error_event["error"]
+        assert "Model unavailable" in error_event["errorText"]
 
     @pytest.mark.asyncio
     async def test_passes_messages_to_model(self) -> None:
