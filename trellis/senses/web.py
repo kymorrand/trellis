@@ -171,6 +171,13 @@ def create_app(
         quests_dir.mkdir(parents=True, exist_ok=True)
         app.include_router(create_quest_router(quests_dir))
 
+    # ─── Garden Content API (Root's scope — MOR-67) ───────────────
+    if vault_path:
+        from trellis.core.garden_api import create_garden_router
+
+        garden_dir = Path(vault_path) / "garden"
+        app.include_router(create_garden_router(garden_dir))
+
     # ─── Chat Stream API (Root's scope — MOR-44) ─────────────────
     if config and config.get("anthropic_key"):
         import anthropic as _anthropic
@@ -204,6 +211,14 @@ def create_app(
         from trellis.core.quest_events_api import create_quest_events_router
 
         app.include_router(create_quest_events_router(_quests_dir, _event_bus))
+
+        # ─── Activity API (Root's scope — MOR-69) ────────────────
+        from trellis.core.activity_store import ActivityStore
+        from trellis.core.activity_api import create_activity_router
+
+        _activity_path = Path(vault_path) / "_ivy" / "activity.jsonl"
+        _activity_store = ActivityStore(_activity_path, _event_bus)
+        app.include_router(create_activity_router(_activity_store))
 
     # ─── Pages ────────────────────────────────────────────────────
 

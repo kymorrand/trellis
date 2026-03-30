@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-30 — Circuit Breakers + Garden Content API (Trellis v1.0 Week 3)
+
+### MOR-66: Circuit Breakers for Tick Scheduler
+- New `trellis/core/circuit_breakers.py` — four independent safety mechanisms for tick execution:
+  - **BudgetBreaker** — warns at 80% Claude budget usage, pauses quest at 100%.
+  - **RepetitionBreaker** — pauses quest after 3 consecutive failures on the same step.
+  - **FailureBreaker** — doubles tick interval (cooldown) after 3 consecutive tick-level failures, resets on success.
+  - **DriftDetector** — flags quest for review when goal hash changes (no auto-pause, just event + flag).
+- `CircuitBreakerRunner` orchestrates all breakers with try/except isolation — a breaker bug never crashes the scheduler.
+- All breakers publish events to EventBus when triggered.
+- 34 new tests in `tests/test_circuit_breakers.py` covering thresholds, state transitions, event publishing, reset behavior, and fault isolation.
+
+### MOR-67: Garden Content Endpoint
+- New `trellis/core/garden_api.py` — FastAPI router serving published vault markdown as garden artifacts.
+  - `GET /api/garden/artifacts` — list all published artifacts with metadata, sorted by `published_at` descending (nulls last).
+  - `GET /api/garden/artifacts/{slug}` — full markdown content for a single artifact.
+- Pydantic models (`GardenArtifact`, `GardenArtifactDetail`, `GardenResponse`) match TypeScript types in `trellis-app/lib/types.ts` exactly.
+- Parses YAML frontmatter for title, description, tags, published_at; generates content_preview (~200 chars).
+- Gracefully handles missing garden directory, missing frontmatter, and invalid YAML.
+- Router registered in `trellis/senses/web.py` under the Garden Content API section.
+- 15 new tests in `tests/test_garden_api.py` covering listing, sorting, preview truncation, detail, 404, edge cases, and model validation.
+
+## 2026-03-30 — Activity Feed Endpoint (Trellis v1.0 Week 3)
+
+### MOR-69: Activity Event Persistence + GET Endpoint
+- New `trellis/core/activity_store.py` — `ActivityStore` class that persists selected EventBus events to `{vault_path}/_ivy/activity.jsonl`. Tracks five event types: step_completed, question_asked, approval_requested, status_changed, tick_completed. Generates human-readable summaries. Supports paginated reads (newest first, cursor-based).
+- New `trellis/core/activity_api.py` — FastAPI router: `GET /api/activity` with `limit` (default 50, max 200) and `before` (ISO timestamp cursor) query params. Response matches `ActivityResponse` TypeScript contract exactly.
+- ActivityStore registered in `trellis/senses/web.py` via factory, sharing the existing EventBus instance.
+- 25 new tests in `tests/test_activity_store.py` covering event conversion, persistence, pagination, cursor behavior, auth, and contract compliance.
+
 ## 2026-03-30 — Question, Approval & Quest Events API (Trellis v1.0 Week 2)
 
 ### MOR-43: Question + Approval + SSE Endpoints
