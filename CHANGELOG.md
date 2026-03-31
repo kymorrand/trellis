@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-30 — Web Chat Tool Calling (MOR-83)
+
+### MOR-83: Wire Tool Calling into Chat Endpoint
+- Added server-side ReAct loop to `trellis/core/chat_stream.py` — the web chat endpoint now has full tool parity with Discord (minus ASK-level tools).
+- 7 tools available in web chat: vault_search, vault_read, vault_save, shell_execute, journal_read, linear_read, linear_search.
+- 2 tools excluded from web chat (require Discord approval flow): armando_dispatch, request_restart.
+- Tool execution happens entirely server-side — the client sees only SSE text events. No frontend changes needed.
+- Optional `status` SSE events emitted during tool execution (e.g., `{"type":"status","tool":"vault_search","status":"executing"}`). Frontend ignores unknown event types.
+- Permission checks integrated: ALLOW tools execute immediately, ASK tools return refusal message pointing to Discord, DENY tools return permission denied.
+- Max tool rounds matches Discord bot (8 rounds via `MAX_TOOL_ROUNDS`).
+- Updated `CHAT_TOOL_DISCLAIMER` from MOR-82: now lists available tools instead of saying "no tools available".
+- Wired `vault_path` and `knowledge_manager` into `create_chat_router()` via `web.py`.
+- Falls back to simple streaming (no tools) when `vault_path` is not configured.
+- 12 new tests in `tests/test_chat_stream.py` covering tool execution, permission checks, max rounds, and status events.
+- All 833 tests pass, lint clean.
+
 ## 2026-03-30 — Admin API: Quest Controls + Model Usage
 
 ### MOR-79: Admin API Endpoints

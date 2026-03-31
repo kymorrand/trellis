@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import AsyncIterator
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -12,9 +13,11 @@ from httpx import ASGITransport, AsyncClient
 
 from trellis.core.chat_stream import (
     CHAT_TOOL_DISCLAIMER,
+    WEB_TOOL_DEFINITIONS,
     create_chat_router,
     encode_sse_event,
     encode_start_part,
+    encode_status_event,
     encode_text_start,
     encode_text_delta,
     encode_text_end,
@@ -172,6 +175,8 @@ def _make_app(
     anthropic_client: object | None = None,
     soul: str = "You are Ivy.",
     ollama_url: str = "http://localhost:11434",
+    vault_path: Path | None = None,
+    knowledge_manager: object | None = None,
 ) -> FastAPI:
     """Create a test app with the chat router."""
     app = FastAPI()
@@ -179,6 +184,8 @@ def _make_app(
         anthropic_client=anthropic_client,
         soul=soul,
         ollama_url=ollama_url,
+        vault_path=vault_path,
+        knowledge_manager=knowledge_manager,
     )
     app.include_router(router)
     return app
@@ -389,11 +396,11 @@ class TestChatStreaming:
 
 
 class TestToolDisclaimer:
-    """Test that the chat endpoint appends the tool disclaimer to the system prompt (MOR-82)."""
+    """Test that the chat endpoint appends the tool notice to the system prompt (MOR-83)."""
 
     @pytest.mark.asyncio
     async def test_disclaimer_appended_to_soul(self) -> None:
-        """System prompt sent to the model must include the tool disclaimer after soul."""
+        """System prompt sent to the model must include the tool notice after soul."""
         mock_client = MagicMock()
 
         async def fake_text_stream() -> AsyncIterator[str]:
@@ -407,6 +414,7 @@ class TestToolDisclaimer:
         mock_client.messages.stream = MagicMock(return_value=mock_stream)
 
         soul_text = "You are Ivy, a brilliant AI assistant with vault access."
+        # No vault_path → uses simple streaming path (messages.stream)
         app = _make_app(anthropic_client=mock_client, soul=soul_text)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -424,15 +432,15 @@ class TestToolDisclaimer:
 
         # Soul content should be at the beginning
         assert system_text.startswith(soul_text)
-        # Disclaimer should be appended after
-        assert "Chat Interface Limitations" in system_text
-        assert "do NOT have access to any tools" in system_text
-        assert "suggest he use Discord" in system_text
-        assert "Do not pretend to use tools" in system_text
+        # Tool notice should be appended after (MOR-83 updated version)
+        assert "Web Chat Tool Access" in system_text
+        assert "vault_search" in system_text
+        assert "armando_dispatch" in system_text
+        assert "Discord" in system_text
 
     @pytest.mark.asyncio
     async def test_disclaimer_appended_to_default_prompt(self) -> None:
-        """Even the fallback prompt should include the tool disclaimer."""
+        """Even the fallback prompt should include the tool notice."""
         mock_client = MagicMock()
 
         async def fake_text_stream() -> AsyncIterator[str]:
@@ -460,15 +468,16 @@ class TestToolDisclaimer:
         system_text = system_blocks[0]["text"]
 
         assert "You are Ivy, a helpful assistant." in system_text
-        assert "Chat Interface Limitations" in system_text
+        assert "Web Chat Tool Access" in system_text
 
-    def test_disclaimer_constant_contains_key_phrases(self) -> None:
-        """Verify the disclaimer constant has the required content."""
-        assert "do NOT have access to any tools" in CHAT_TOOL_DISCLAIMER
-        assert "vault" in CHAT_TOOL_DISCLAIMER.lower()
-        assert "shell" in CHAT_TOOL_DISCLAIMER.lower()
+    def test_disclaimer_constant_mentions_tools(self) -> None:
+        """Verify the disclaimer constant lists available tools and limitations."""
+        assert "vault_search" in CHAT_TOOL_DISCLAIMER
+        assert "vault_read" in CHAT_TOOL_DISCLAIMER
+        assert "shell_execute" in CHAT_TOOL_DISCLAIMER
         assert "Discord" in CHAT_TOOL_DISCLAIMER
-        assert "fake tool-use XML tags" in CHAT_TOOL_DISCLAIMER
+        assert "armando_dispatch" in CHAT_TOOL_DISCLAIMER
+        assert "request_restart" in CHAT_TOOL_DISCLAIMER
 
 
 class TestSSEFormatCompliance:
@@ -534,3 +543,430 @@ class TestSSEFormatCompliance:
                 payload = line.removeprefix("data: ")
                 parsed = json.loads(payload)  # Should not raise
                 assert "type" in parsed
+
+
+# ─── Tool execution tests (MOR-83) ──────────────────────────
+
+
+def _make_text_block(text: str) -> MagicMock:
+    """Create a mock ContentBlock with type='text'."""
+    block = MagicMock()
+    block.type = "text"
+    block.text = text
+    return block
+
+
+def _make_tool_use_block(
+    tool_id: str, name: str, input_data: dict,
+) -> MagicMock:
+    """Create a mock ContentBlock with type='tool_use'."""
+    block = MagicMock()
+    block.type = "tool_use"
+    block.id = tool_id
+    block.name = name
+    block.input = input_data
+    return block
+
+
+def _make_mock_response(content_blocks: list, stop_reason: str = "end_turn") -> MagicMock:
+    """Create a mock Anthropic messages.create response."""
+    response = MagicMock()
+    response.content = content_blocks
+    response.stop_reason = stop_reason
+    response.usage = MagicMock()
+    response.usage.input_tokens = 100
+    response.usage.output_tokens = 50
+    return response
+
+
+def _parse_sse_events(response_text: str) -> list[dict]:
+    """Parse SSE data lines from response text into dicts."""
+    events = []
+    for line in response_text.strip().split("\n"):
+        line = line.strip()
+        if line.startswith("data: "):
+            events.append(json.loads(line.removeprefix("data: ")))
+    return events
+
+
+class TestWebToolDefinitions:
+    """Test that WEB_TOOL_DEFINITIONS excludes ASK-level tools."""
+
+    def test_excludes_armando_dispatch(self) -> None:
+        names = {t["name"] for t in WEB_TOOL_DEFINITIONS}
+        assert "armando_dispatch" not in names
+
+    def test_excludes_request_restart(self) -> None:
+        names = {t["name"] for t in WEB_TOOL_DEFINITIONS}
+        assert "request_restart" not in names
+
+    def test_includes_allow_tools(self) -> None:
+        names = {t["name"] for t in WEB_TOOL_DEFINITIONS}
+        assert "vault_search" in names
+        assert "vault_read" in names
+        assert "vault_save" in names
+        assert "shell_execute" in names
+        assert "journal_read" in names
+        assert "linear_read" in names
+        assert "linear_search" in names
+
+
+class TestStatusEvent:
+    """Test the status event helper."""
+
+    def test_encode_status_event(self) -> None:
+        event = encode_status_event("vault_search", "executing")
+        assert event == {
+            "type": "status",
+            "tool": "vault_search",
+            "status": "executing",
+        }
+
+
+class TestToolExecution:
+    """Test tool execution through the chat endpoint ReAct loop (MOR-83)."""
+
+    @pytest.mark.asyncio
+    async def test_tools_passed_to_api_call(self, tmp_path: Path) -> None:
+        """When vault_path is provided, tools should be passed to messages.create."""
+        mock_client = MagicMock()
+
+        # Model returns a pure text response (no tools called)
+        text_response = _make_mock_response([_make_text_block("Hello!")])
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=text_response)
+
+        app = _make_app(
+            anthropic_client=mock_client, vault_path=tmp_path,
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+                headers=_auth_header(),
+            )
+
+        assert resp.status_code == 200
+        # Verify tools were passed to messages.create
+        call_kwargs = mock_client.messages.create.call_args
+        assert "tools" in call_kwargs.kwargs
+        tool_names = {t["name"] for t in call_kwargs.kwargs["tools"]}
+        assert "vault_search" in tool_names
+        # ASK-level tools should NOT be in the tool set
+        assert "armando_dispatch" not in tool_names
+
+    @pytest.mark.asyncio
+    async def test_tool_execution_round_trip(self, tmp_path: Path) -> None:
+        """Test that tool_use response triggers execution and feeds result back."""
+        mock_client = MagicMock()
+
+        # Round 1: Model calls vault_search
+        tool_use_block = _make_tool_use_block(
+            "tool-1", "vault_search", {"query": "test"},
+        )
+        round1_response = _make_mock_response(
+            [tool_use_block], stop_reason="tool_use",
+        )
+
+        # Round 2: Model returns text after receiving tool result
+        round2_response = _make_mock_response(
+            [_make_text_block("Found 3 results in the vault.")],
+        )
+
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=[round1_response, round2_response],
+        )
+
+        # Patch the ToolExecutor.execute to return a known result
+        with patch.object(
+            __import__("trellis.core.loop", fromlist=["ToolExecutor"]).ToolExecutor,
+            "execute",
+            new_callable=AsyncMock,
+            return_value="3 results found for 'test'",
+        ):
+            app = _make_app(
+                anthropic_client=mock_client, vault_path=tmp_path,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "search vault for test"}]},
+                    headers=_auth_header(),
+                )
+
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+
+        # Should have a status event for the tool execution
+        status_events = [e for e in events if e.get("type") == "status"]
+        assert len(status_events) >= 1
+        assert status_events[0]["tool"] == "vault_search"
+
+        # Should have the final text response
+        text_deltas = [e for e in events if e.get("type") == "text-delta"]
+        assert len(text_deltas) >= 1
+        full_text = "".join(e["delta"] for e in text_deltas)
+        assert "Found 3 results" in full_text
+
+        # Should have called messages.create twice (two rounds)
+        assert mock_client.messages.create.call_count == 2
+
+        # Second call should include tool results in messages
+        second_call = mock_client.messages.create.call_args_list[1]
+        second_messages = second_call.kwargs["messages"]
+        # Should have: original user msg, assistant (tool_use), user (tool_result)
+        assert len(second_messages) == 3
+        assert second_messages[2]["role"] == "user"
+        tool_results = second_messages[2]["content"]
+        assert tool_results[0]["type"] == "tool_result"
+        assert tool_results[0]["tool_use_id"] == "tool-1"
+
+    @pytest.mark.asyncio
+    async def test_ask_permission_tool_refused(self, tmp_path: Path) -> None:
+        """ASK-level tools should be refused with a message pointing to Discord."""
+        mock_client = MagicMock()
+
+        # Model tries to call armando_dispatch (which is ASK-level)
+        # But wait — armando_dispatch is not in WEB_TOOL_DEFINITIONS,
+        # so Claude shouldn't call it. Test with a hypothetical scenario
+        # where the permission check itself returns ASK.
+        tool_use_block = _make_tool_use_block(
+            "tool-1", "vault_search", {"query": "test"},
+        )
+        round1_response = _make_mock_response(
+            [tool_use_block], stop_reason="tool_use",
+        )
+        round2_response = _make_mock_response(
+            [_make_text_block("Got it.")],
+        )
+
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=[round1_response, round2_response],
+        )
+
+        # Override check_permission to return ASK for any tool
+        with patch(
+            "trellis.core.chat_stream.check_permission",
+            return_value=__import__("trellis.security.permissions", fromlist=["Permission"]).Permission.ASK,
+        ):
+            app = _make_app(
+                anthropic_client=mock_client, vault_path=tmp_path,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "search"}]},
+                    headers=_auth_header(),
+                )
+
+        assert resp.status_code == 200
+        # The tool result sent back to Claude should contain the refusal message
+        second_call = mock_client.messages.create.call_args_list[1]
+        second_messages = second_call.kwargs["messages"]
+        tool_results = second_messages[2]["content"]
+        assert "requires approval" in tool_results[0]["content"]
+        assert "Discord" in tool_results[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_deny_permission_tool_refused(self, tmp_path: Path) -> None:
+        """DENY-level tools should be refused."""
+        mock_client = MagicMock()
+
+        tool_use_block = _make_tool_use_block(
+            "tool-1", "vault_search", {"query": "test"},
+        )
+        round1_response = _make_mock_response(
+            [tool_use_block], stop_reason="tool_use",
+        )
+        round2_response = _make_mock_response(
+            [_make_text_block("Ok.")],
+        )
+
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=[round1_response, round2_response],
+        )
+
+        with patch(
+            "trellis.core.chat_stream.check_permission",
+            return_value=__import__("trellis.security.permissions", fromlist=["Permission"]).Permission.DENY,
+        ):
+            app = _make_app(
+                anthropic_client=mock_client, vault_path=tmp_path,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "do something"}]},
+                    headers=_auth_header(),
+                )
+
+        assert resp.status_code == 200
+        second_call = mock_client.messages.create.call_args_list[1]
+        second_messages = second_call.kwargs["messages"]
+        tool_results = second_messages[2]["content"]
+        assert "Permission denied" in tool_results[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_max_rounds_limit(self, tmp_path: Path) -> None:
+        """ReAct loop should stop after MAX_TOOL_ROUNDS and return fallback."""
+        from trellis.core.loop import MAX_TOOL_ROUNDS
+
+        mock_client = MagicMock()
+
+        # Every round returns a tool_use — never stops
+        tool_use_block = _make_tool_use_block(
+            "tool-1", "vault_search", {"query": "endless"},
+        )
+        tool_response = _make_mock_response(
+            [tool_use_block], stop_reason="tool_use",
+        )
+
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=tool_response)
+
+        with patch.object(
+            __import__("trellis.core.loop", fromlist=["ToolExecutor"]).ToolExecutor,
+            "execute",
+            new_callable=AsyncMock,
+            return_value="some result",
+        ):
+            app = _make_app(
+                anthropic_client=mock_client, vault_path=tmp_path,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "loop forever"}]},
+                    headers=_auth_header(),
+                )
+
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+
+        # Should hit the fallback message
+        text_deltas = [e for e in events if e.get("type") == "text-delta"]
+        full_text = "".join(e["delta"] for e in text_deltas)
+        assert "stop here" in full_text
+
+        # Should have called create exactly MAX_TOOL_ROUNDS times
+        assert mock_client.messages.create.call_count == MAX_TOOL_ROUNDS
+
+    @pytest.mark.asyncio
+    async def test_no_vault_path_uses_simple_streaming(self) -> None:
+        """Without vault_path, should fall back to simple streaming (no tools)."""
+        mock_client = MagicMock()
+
+        async def fake_text_stream() -> AsyncIterator[str]:
+            yield "Hello"
+
+        mock_stream = AsyncMock()
+        mock_stream.text_stream = fake_text_stream()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=False)
+        mock_client.messages = MagicMock()
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
+
+        # No vault_path → no tools → uses messages.stream
+        app = _make_app(anthropic_client=mock_client)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+                headers=_auth_header(),
+            )
+
+        assert resp.status_code == 200
+        # Should have used messages.stream, NOT messages.create
+        mock_client.messages.stream.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pure_text_response_streams_correctly(self, tmp_path: Path) -> None:
+        """When model returns text only (no tools), it should stream as normal."""
+        mock_client = MagicMock()
+
+        text_response = _make_mock_response([_make_text_block("Just a chat response.")])
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=text_response)
+
+        app = _make_app(
+            anthropic_client=mock_client, vault_path=tmp_path,
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "just chat"}]},
+                headers=_auth_header(),
+            )
+
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+
+        # Should have the full SSE sequence: start, text-start, text-delta, text-end, finish
+        types = [e["type"] for e in events]
+        assert types == ["start", "text-start", "text-delta", "text-end", "finish"]
+
+        text_deltas = [e for e in events if e["type"] == "text-delta"]
+        assert text_deltas[0]["delta"] == "Just a chat response."
+
+    @pytest.mark.asyncio
+    async def test_multiple_tool_calls_in_single_round(self, tmp_path: Path) -> None:
+        """Model can call multiple tools in a single round."""
+        mock_client = MagicMock()
+
+        # Round 1: Model calls two tools at once
+        tool1 = _make_tool_use_block("tool-1", "vault_search", {"query": "a"})
+        tool2 = _make_tool_use_block("tool-2", "journal_read", {"limit": 5})
+        round1_response = _make_mock_response(
+            [tool1, tool2], stop_reason="tool_use",
+        )
+
+        # Round 2: Text response
+        round2_response = _make_mock_response(
+            [_make_text_block("Here's what I found.")],
+        )
+
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(
+            side_effect=[round1_response, round2_response],
+        )
+
+        with patch.object(
+            __import__("trellis.core.loop", fromlist=["ToolExecutor"]).ToolExecutor,
+            "execute",
+            new_callable=AsyncMock,
+            return_value="tool result",
+        ):
+            app = _make_app(
+                anthropic_client=mock_client, vault_path=tmp_path,
+            )
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "search and read journal"}]},
+                    headers=_auth_header(),
+                )
+
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+
+        # Should have 2 status events (one per tool)
+        status_events = [e for e in events if e.get("type") == "status"]
+        assert len(status_events) == 2
+
+        # Second call should have 2 tool results
+        second_call = mock_client.messages.create.call_args_list[1]
+        second_messages = second_call.kwargs["messages"]
+        tool_results = second_messages[2]["content"]
+        assert len(tool_results) == 2
+        assert {r["tool_use_id"] for r in tool_results} == {"tool-1", "tool-2"}

@@ -178,7 +178,7 @@ def create_app(
         garden_dir = Path(vault_path) / "garden"
         app.include_router(create_garden_router(garden_dir))
 
-    # ─── Chat Stream API (Root's scope — MOR-44) ─────────────────
+    # ─── Chat Stream API (Root's scope — MOR-44, MOR-83) ───────────
     if config and config.get("anthropic_key"):
         import anthropic as _anthropic
 
@@ -190,6 +190,8 @@ def create_app(
         app.include_router(create_chat_router(
             anthropic_client=_chat_client,
             soul=_soul,
+            vault_path=Path(vault_path) if vault_path else None,
+            knowledge_manager=knowledge_manager,
         ))
 
     # ─── Question + Approval + Quest Events API (Root's scope — MOR-43) ──
