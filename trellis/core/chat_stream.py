@@ -306,9 +306,11 @@ def create_chat_router(
                     # Execute tools server-side
                     tool_results = []
                     for tool_use in tool_uses:
-                        # Emit status event so frontend can optionally show progress
-                        yield encode_sse_event(
-                            encode_status_event(tool_use.name, "executing")
+                        # NOTE: Status events removed — AI SDK v6 useChat
+                        # does strict validation and rejects unknown event
+                        # types. See CLAUDE.md rule about SSE protocol.
+                        logger.info(
+                            "Chat tool call: %s", tool_use.name,
                         )
 
                         # Check permission — refuse ASK-level tools in web chat

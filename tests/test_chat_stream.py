@@ -700,10 +700,8 @@ class TestToolExecution:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
 
-        # Should have a status event for the tool execution
-        status_events = [e for e in events if e.get("type") == "status"]
-        assert len(status_events) >= 1
-        assert status_events[0]["tool"] == "vault_search"
+        # Status events removed — AI SDK v6 rejects unknown event types.
+        # Tool execution is logged server-side instead.
 
         # Should have the final text response
         text_deltas = [e for e in events if e.get("type") == "text-delta"]
@@ -960,9 +958,7 @@ class TestToolExecution:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
 
-        # Should have 2 status events (one per tool)
-        status_events = [e for e in events if e.get("type") == "status"]
-        assert len(status_events) == 2
+        # Status events removed — AI SDK v6 rejects unknown types.
 
         # Second call should have 2 tool results
         second_call = mock_client.messages.create.call_args_list[1]
