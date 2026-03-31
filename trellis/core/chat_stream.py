@@ -41,6 +41,26 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TOKENS = 2048
 
+# ─── Chat interface tool disclaimer ────────────────────────────
+# Appended to the system prompt to prevent Ivy from hallucinating
+# tool usage. The chat endpoint has NO tools wired up — all tool
+# access is via Discord (AgentBrain + ToolExecutor). See MOR-82.
+
+CHAT_TOOL_DISCLAIMER = """
+
+## Chat Interface Limitations
+
+This conversation is through the Trellis web chat interface. You do NOT have access to any tools in this conversation. You cannot:
+- Read, write, or search the vault
+- Execute shell commands
+- Query Linear
+- Dispatch Armando agents
+- Take screenshots
+- Access the calendar
+
+If Kyle asks you to do something that requires tool access, tell him honestly that the web chat doesn't have tools yet, and suggest he use Discord where you have full tool access. Do not pretend to use tools or generate fake tool-use XML tags.
+"""
+
 # ─── Pydantic models ────────────────────────────────────────
 
 
@@ -165,8 +185,11 @@ def create_chat_router(
         # Build the messages list for the Anthropic API
         messages = [{"role": m.role, "content": m.content} for m in body.messages]
 
-        # Use the provided system prompt, with optional override from request
-        system_prompt = body.system or soul or "You are Ivy, a helpful assistant."
+        # Use the provided system prompt, with optional override from request.
+        # Append CHAT_TOOL_DISCLAIMER so Ivy knows she has no tool access
+        # in the web chat interface — prevents hallucinated tool usage (MOR-82).
+        base_prompt = body.system or soul or "You are Ivy, a helpful assistant."
+        system_prompt = base_prompt + CHAT_TOOL_DISCLAIMER
 
         # System prompt with prompt caching
         system_with_cache = [

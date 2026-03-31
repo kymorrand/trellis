@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from trellis.core.chat_stream import (
+    CHAT_TOOL_DISCLAIMER,
     create_chat_router,
     encode_sse_event,
     encode_start_part,
@@ -385,6 +386,89 @@ class TestChatStreaming:
                 headers=_auth_header(),
             )
         assert resp.status_code == 422
+
+
+class TestToolDisclaimer:
+    """Test that the chat endpoint appends the tool disclaimer to the system prompt (MOR-82)."""
+
+    @pytest.mark.asyncio
+    async def test_disclaimer_appended_to_soul(self) -> None:
+        """System prompt sent to the model must include the tool disclaimer after soul."""
+        mock_client = MagicMock()
+
+        async def fake_text_stream() -> AsyncIterator[str]:
+            yield "Ok"
+
+        mock_stream = AsyncMock()
+        mock_stream.text_stream = fake_text_stream()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=False)
+        mock_client.messages = MagicMock()
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
+
+        soul_text = "You are Ivy, a brilliant AI assistant with vault access."
+        app = _make_app(anthropic_client=mock_client, soul=soul_text)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "take a note"}]},
+                headers=_auth_header(),
+            )
+
+        call_kwargs = mock_client.messages.stream.call_args
+        system_blocks = call_kwargs.kwargs["system"]
+        # System is a list of blocks with prompt caching
+        assert len(system_blocks) == 1
+        system_text = system_blocks[0]["text"]
+
+        # Soul content should be at the beginning
+        assert system_text.startswith(soul_text)
+        # Disclaimer should be appended after
+        assert "Chat Interface Limitations" in system_text
+        assert "do NOT have access to any tools" in system_text
+        assert "suggest he use Discord" in system_text
+        assert "Do not pretend to use tools" in system_text
+
+    @pytest.mark.asyncio
+    async def test_disclaimer_appended_to_default_prompt(self) -> None:
+        """Even the fallback prompt should include the tool disclaimer."""
+        mock_client = MagicMock()
+
+        async def fake_text_stream() -> AsyncIterator[str]:
+            yield "Ok"
+
+        mock_stream = AsyncMock()
+        mock_stream.text_stream = fake_text_stream()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=False)
+        mock_client.messages = MagicMock()
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
+
+        # No soul provided — should fall back to default + disclaimer
+        app = _make_app(anthropic_client=mock_client, soul="")
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+                headers=_auth_header(),
+            )
+
+        call_kwargs = mock_client.messages.stream.call_args
+        system_blocks = call_kwargs.kwargs["system"]
+        system_text = system_blocks[0]["text"]
+
+        assert "You are Ivy, a helpful assistant." in system_text
+        assert "Chat Interface Limitations" in system_text
+
+    def test_disclaimer_constant_contains_key_phrases(self) -> None:
+        """Verify the disclaimer constant has the required content."""
+        assert "do NOT have access to any tools" in CHAT_TOOL_DISCLAIMER
+        assert "vault" in CHAT_TOOL_DISCLAIMER.lower()
+        assert "shell" in CHAT_TOOL_DISCLAIMER.lower()
+        assert "Discord" in CHAT_TOOL_DISCLAIMER
+        assert "fake tool-use XML tags" in CHAT_TOOL_DISCLAIMER
 
 
 class TestSSEFormatCompliance:
