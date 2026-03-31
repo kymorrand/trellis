@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-30 — Admin API: Quest Controls + Model Usage
+
+### MOR-79: Admin API Endpoints
+- New `trellis/core/admin_api.py` — four admin endpoints for the Trellis dashboard:
+  - `PATCH /api/quests/{id}/status` — pause, resume, or abandon quests with state transition validation.
+  - `PATCH /api/quests/{id}/tick-config` — update tick interval (5m/10m/15m/30m/1h) and window (8am-11pm/8am-6pm/24h).
+  - `GET /api/admin/usage` — aggregated model usage with per-quest spend/budget breakdown.
+  - `GET /api/admin/ticks` — filtered tick history from activity store (completed/failed/skipped).
+- Updated `trellis/core/activity_store.py` to persist `tick_failed` and `tick_skipped` events with `tick_number` and `duration_ms` fields.
+- Wired admin router into `web.py` via `create_admin_router()`.
+- 34 new tests in `tests/test_admin_api.py` covering auth, status transitions, config validation, usage aggregation, and tick history.
+- All 818 tests pass, lint clean.
+
 ## 2026-03-30 — Circuit Breakers Wired into Tick Loop
 
 ### MOR-71: Wire Circuit Breakers into Tick Loop

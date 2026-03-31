@@ -220,6 +220,11 @@ def create_app(
         _activity_store = ActivityStore(_activity_path, _event_bus)
         app.include_router(create_activity_router(_activity_store))
 
+        # ─── Admin API (Root's scope — MOR-79) ──────────────────
+        from trellis.core.admin_api import create_admin_router
+
+        app.include_router(create_admin_router(_quests_dir, _activity_store))
+
     # ─── Pages ────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)

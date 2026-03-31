@@ -28,6 +28,8 @@ _EVENT_TYPE_MAP: dict[EventType, str] = {
     EventType.QUEST_STEP_COMPLETED: "step_completed",
     EventType.QUEST_QUESTION_ASKED: "question_asked",
     EventType.TICK_COMPLETED: "tick_completed",
+    EventType.TICK_FAILED: "tick_failed",
+    EventType.TICK_SKIPPED: "tick_skipped",
     EventType.QUEST_STATUS_CHANGED: "status_changed",
 }
 
@@ -69,6 +71,18 @@ def _generate_summary(event: QuestEvent, activity_type: str) -> str:
             return f"Tick completed ({phase_count} phases)"
         return "Tick completed"
 
+    if activity_type == "tick_failed":
+        error = data.get("error", "")
+        if error:
+            return f"Tick failed: {error}"
+        return "Tick failed"
+
+    if activity_type == "tick_skipped":
+        reason = data.get("reason", "")
+        if reason:
+            return f"Tick skipped: {reason}"
+        return "Tick skipped"
+
     return f"Event: {activity_type}"
 
 
@@ -89,7 +103,7 @@ def event_to_activity(event: QuestEvent) -> dict[str, Any] | None:
     quest_title = event.data.get("quest_title", event.quest_id)
     summary = _generate_summary(event, activity_type)
 
-    return {
+    record: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "type": activity_type,
         "quest_id": event.quest_id,
@@ -97,6 +111,15 @@ def event_to_activity(event: QuestEvent) -> dict[str, Any] | None:
         "summary": summary,
         "timestamp": event.timestamp.isoformat(),
     }
+
+    # Include tick-specific fields for admin tick history
+    if activity_type in ("tick_completed", "tick_failed", "tick_skipped"):
+        if "tick_number" in event.data:
+            record["tick_number"] = event.data["tick_number"]
+        if "duration_ms" in event.data:
+            record["duration_ms"] = event.data["duration_ms"]
+
+    return record
 
 
 class ActivityStore:
